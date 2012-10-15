@@ -12,4 +12,89 @@ give an explicit name to that value.
 loader plugin-style of modules and for a more direct relationship between
 dependency references and module definitions.
 
+## Supported syntax
+
+### Static API
+
+To use a module:
+
+    module a from 'a';
+
+To use a "loader plugin", specify the module ID of the plugin, then an '@'
+separator, followed by a resource ID that the plugin handles:
+
+    module template from 'text!template.html';
+
+To import a statically known exports:
+
+    import y from 'a';
+
+To export a property on an exported value:
+
+    export var name = 'a';
+
+### Runtime/Dynamic API
+
+In addition to these forms, a "runtime API" is used to declare single value
+exports. Right now it just uses the System.set() API:
+
+```javascript
+System.set(function () {});
+```
+
+Similarly, a module can use a runtime API to indicate a dependency, via
+System.get():
+
+```javascript
+var dep = System.get('util/helper');
+```
+
+For the runtime API, any `System.get('stringLiteral')` calls are parsed via
+AST, and those dependencies are fetched and executed before executing the
+current function. `System.get()` just returns the cached export for that
+dependency.
+
+By supporting the runtime API natively, this allows:
+
+* "Legacy" JS to opt-in to being used by an ES.next module system, in a way that
+allows the the legacy script to work in non-ES.next systems (1JS concerns).
+* By not using a loader plugin to load legacy scripts, it allows the script to
+"upgrade" to static forms later without all callers having to then change their
+dependency reference IDs.
+
+If there is a conflict where `System.get/set` actually referred to some other API,
+then a loader plugin could be used to load those scripts.
+
+## Unsupported syntax
+
+1) "Built" forms, where there are named modules all combined together:
+
+    module 'a' {
+        module b from 'b';
+        export var name = 'a';
+        export b;
+    }
+
+    module 'b' {
+        export var name = 'b';
+    }
+
+This shold be possible, just need to work out the AST transforms. `module {}`
+scope will be treated the same as `function () {}` scope.
+
 ## How does it work?
+
+
+## TODO
+
+* Integrate sweetjs (or something else?) as a proof of concept of a static
+entity working alongside the dynamic, runtime module values.
+* Allow a `System.exports = value`, to allow for cycle dependencies via the
+runtime API?
+* Allow a `System.module` that has a .id and .uri properties that give info on
+the current module? This is similar to the `module` free variable in CommonJS/AMD
+and is used often times to locate resources relative to the module.
+* Change the loader plugin API to something that matches the Module Loader API,
+like resolve vs normalize, anything else?
+* Integrate modus parsing into the core of requirejs for the plugin path,
+so transpiled languages can use the modus syntax.

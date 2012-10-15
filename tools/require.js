@@ -371,12 +371,21 @@ var requirejs, require, define, System;
             }
         }
 
-        //Turns a plugin!resource to [plugin, resource]
+        //Turns a plugin@resource or plugin!resource to [plugin, resource]
         //with the plugin being undefined if the name
         //did not have a plugin prefix.
         function splitPrefix(name) {
             var prefix,
-                index = name ? name.indexOf('!') : -1;
+                index = -1;
+
+            if (name) {
+                index = name.indexOf('@');
+                if (index === -1) {
+                    //Fall back to also supporting requirejs plug!resource ids.
+                    index = name.indexOf('!');
+                }
+            }
+
             if (index > -1) {
                 prefix = name.substring(0, index);
                 name = name.substring(index + 1, name.length);
@@ -466,7 +475,7 @@ var requirejs, require, define, System;
                 originalName: originalName,
                 isDefine: isDefine,
                 id: (prefix ?
-                        prefix + '!' + normalizedName :
+                        prefix + '@' + normalizedName :
                         normalizedName) + suffix
             };
         }
@@ -931,7 +940,7 @@ var requirejs, require, define, System;
 
                         //prefix and name should already be normalized, no need
                         //for applying map config again either.
-                        normalizedMap = makeModuleMap(map.prefix + '!' + name,
+                        normalizedMap = makeModuleMap(map.prefix + '@' + name,
                                                       this.map.parentMap);
                         on(normalizedMap,
                             'defined', bind(this, function (value) {

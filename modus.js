@@ -2591,7 +2591,10 @@ parseYieldExpression: true
             };
         }
 
-        expect('=');
+        //JRB: modified, was just expect('=');
+        if (matchContextualKeyword('from')) {
+            lex();
+        }
 
         token = lookahead();
         if (token.type === Token.StringLiteral) {
@@ -5002,12 +5005,21 @@ function isFunction(it) {
             }
         }
 
-        //Turns a plugin!resource to [plugin, resource]
+        //Turns a plugin@resource or plugin!resource to [plugin, resource]
         //with the plugin being undefined if the name
         //did not have a plugin prefix.
         function splitPrefix(name) {
             var prefix,
-                index = name ? name.indexOf('!') : -1;
+                index = -1;
+
+            if (name) {
+                index = name.indexOf('@');
+                if (index === -1) {
+                    //Fall back to also supporting requirejs plug!resource ids.
+                    index = name.indexOf('!');
+                }
+            }
+
             if (index > -1) {
                 prefix = name.substring(0, index);
                 name = name.substring(index + 1, name.length);
@@ -5097,7 +5109,7 @@ function isFunction(it) {
                 originalName: originalName,
                 isDefine: isDefine,
                 id: (prefix ?
-                        prefix + '!' + normalizedName :
+                        prefix + '@' + normalizedName :
                         normalizedName) + suffix
             };
         }
@@ -5562,7 +5574,7 @@ function isFunction(it) {
 
                         //prefix and name should already be normalized, no need
                         //for applying map config again either.
-                        normalizedMap = makeModuleMap(map.prefix + '!' + name,
+                        normalizedMap = makeModuleMap(map.prefix + '@' + name,
                                                       this.map.parentMap);
                         on(normalizedMap,
                             'defined', bind(this, function (value) {
@@ -6509,12 +6521,7 @@ java, requirejs, document, esprima, eachProp, each, System: true */
      * @returns id
      */
     function cleanModuleId(id) {
-        id = moduleNameRegExp.exec(id)[1];
-
-        //Just a hack for now, convert '@' in 'plugin@resource' to be
-        //'plugin!resource' just so the internal code in requirejs does
-        //not have to change.
-        return id.replace(atRegExp, '!');
+        return moduleNameRegExp.exec(id)[1];
     }
 
     function convertImportSyntax(tokens, start, end, moduleTarget) {
@@ -6607,7 +6614,7 @@ java, requirejs, document, esprima, eachProp, each, System: true */
             id = tokens[i + 2];
 
         if (varName.type === 'Identifier' &&
-                eq.type === 'Punctuator' && eq.value === '=' &&
+                eq.value === 'from' &&
                 id.type === 'String') {
             return varName.value + ' = require("' + cleanModuleId(id.value) + '")';
         } else {
@@ -6742,8 +6749,22 @@ java, requirejs, document, esprima, eachProp, each, System: true */
                     end: tokens[cursor + 3].range[0],
                     replacement: replacement
                 });
-            } else if (token.value === 'System') {
-                debugger;
+            } else if (token.value === 'System' &&
+                    next.type === 'Punctuator' &&
+                    next.value === '.') {
+                if (next2.value === 'get') {
+                    targets.push({
+                        start: token.range[0],
+                        end: next2.range[1],
+                        replacement: 'require'
+                    });
+                } else if (next2.value === 'set') {
+                    targets.push({
+                        start: token.range[0],
+                        end: next2.range[1],
+                        replacement: 'module.exports = '
+                    });
+                }
             }
         });
 

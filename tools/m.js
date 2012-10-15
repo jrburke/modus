@@ -35,12 +35,7 @@ java, requirejs, document, esprima, eachProp, each, System: true */
      * @returns id
      */
     function cleanModuleId(id) {
-        id = moduleNameRegExp.exec(id)[1];
-
-        //Just a hack for now, convert '@' in 'plugin@resource' to be
-        //'plugin!resource' just so the internal code in requirejs does
-        //not have to change.
-        return id.replace(atRegExp, '!');
+        return moduleNameRegExp.exec(id)[1];
     }
 
     function convertImportSyntax(tokens, start, end, moduleTarget) {
@@ -133,7 +128,7 @@ java, requirejs, document, esprima, eachProp, each, System: true */
             id = tokens[i + 2];
 
         if (varName.type === 'Identifier' &&
-                eq.type === 'Punctuator' && eq.value === '=' &&
+                eq.value === 'from' &&
                 id.type === 'String') {
             return varName.value + ' = require("' + cleanModuleId(id.value) + '")';
         } else {
@@ -268,8 +263,22 @@ java, requirejs, document, esprima, eachProp, each, System: true */
                     end: tokens[cursor + 3].range[0],
                     replacement: replacement
                 });
-            } else if (token.value === 'System') {
-                debugger;
+            } else if (token.value === 'System' &&
+                    next.type === 'Punctuator' &&
+                    next.value === '.') {
+                if (next2.value === 'get') {
+                    targets.push({
+                        start: token.range[0],
+                        end: next2.range[1],
+                        replacement: 'require'
+                    });
+                } else if (next2.value === 'set') {
+                    targets.push({
+                        start: token.range[0],
+                        end: next2.range[1],
+                        replacement: 'module.exports = '
+                    });
+                }
             }
         });
 

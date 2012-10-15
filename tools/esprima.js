@@ -2549,7 +2549,10 @@ parseYieldExpression: true
             };
         }
 
-        expect('=');
+        //JRB: modified, was just expect('=');
+        if (matchContextualKeyword('from')) {
+            lex();
+        }
 
         token = lookahead();
         if (token.type === Token.StringLiteral) {
