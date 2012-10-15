@@ -28,6 +28,8 @@ separator, followed by a resource ID that the plugin handles:
 To import a statically known exports:
 
     import y from 'a';
+    import { name: localGammaName } from gamma;
+
 
 To export a property on an exported value:
 
@@ -82,8 +84,25 @@ then a loader plugin could be used to load those scripts.
 This shold be possible, just need to work out the AST transforms. `module {}`
 scope will be treated the same as `function () {}` scope.
 
+## 'Global' API
+
+`System.load()` is used to kick off top level module loading. Right now it is
+just an alias to the `require([], function () {})` API, but it can be adapted
+to another form. It seemed that allowing multiple modules to load from a single
+load call, since that API is the only API to do a top-level script load. Maybe
+that is just meant to look like `System.load('a', 'b', function (a, b) {})`.
+
 ## How does it work?
 
+RequireJS is used under the covers, but instead of loading scripts via a script
+tags, it uses XMLHttpRequest (XHR) calls to load the text, then the text is
+parsed via esprima.js to find the module APIs, and they are converted to
+requirejs APIs.
+
+This is just a start, to get a feel for the surface syntax, but the approach
+will be changed more over time as the TODO items are done. In particular, the
+goal is to simulate injecting static exports before execution, to do a proof
+of concept of the static forms mixing with dynamic values.
 
 ## TODO
 
