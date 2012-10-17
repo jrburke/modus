@@ -20,6 +20,9 @@ doh.register(
 
             var text = "module b from 'b';";
             t.is(text, grind(text));
+
+            text = "import y from 'b';";
+            t.is(text, grind(text));
         }
     ]
 );
