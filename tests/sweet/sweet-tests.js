@@ -1,5 +1,6 @@
 /*global requirejs, doh */
-var sweet = requirejs.sweet;
+var sweet = requirejs.sweet,
+    lineEndRegExp = /[\r\n]\s*/g;
 
 function grind(text) {
     'use strict';
@@ -9,7 +10,11 @@ function grind(text) {
         ast = sweet.parser.parse(flattened),
         finalText = sweet.escodegen.generate(ast);
 
-    return finalText;
+    return stripLines(finalText);
+}
+
+function stripLines(text) {
+    return text && text.replace(lineEndRegExp, '');
 }
 
 doh.register(
@@ -22,6 +27,9 @@ doh.register(
             t.is(text, grind(text));
 
             text = "import y from 'b';";
+            t.is(text, grind(text));
+
+            text = "export var foo = function () {};";
             t.is(text, grind(text));
         }
     ]

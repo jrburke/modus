@@ -7628,6 +7628,7 @@ to decide on the correct name for identifiers.
         DoWhileStatement: 'DoWhileStatement',
         DebuggerStatement: 'DebuggerStatement',
         EmptyStatement: 'EmptyStatement',
+        ExportDeclaration: 'ExportDeclaration',
         ExpressionStatement: 'ExpressionStatement',
         ForStatement: 'ForStatement',
         ForInStatement: 'ForInStatement',
@@ -9916,6 +9917,21 @@ to decide on the correct name for identifiers.
         };
     }
 
+    // JRB Export Statement
+    function parseExportStatement() {
+        var statement;
+
+        expectKeyword('export');
+
+        statement = parseStatement();
+
+        return {
+            type: Syntax.ExportDeclaration,
+            statement: statement,
+            kind: 'export'
+        };
+    }
+
     // kind may be `const` or `let`
     // Both are experimental and not in the specification yet.
     // see http://wiki.ecmascript.org/doku.php?id=harmony:const
@@ -10518,6 +10534,8 @@ to decide on the correct name for identifiers.
                 return parseDebuggerStatement();
             case 'do':
                 return parseDoWhileStatement();
+            case 'export':
+                return parseExportStatement();
             case 'for':
                 return parseForStatement();
             case 'function':
@@ -11723,6 +11741,7 @@ to decide on the correct name for identifiers.
         DoWhileStatement: 'DoWhileStatement',
         DebuggerStatement: 'DebuggerStatement',
         EmptyStatement: 'EmptyStatement',
+        ExportDeclaration: 'ExportDeclaration',
         ExpressionStatement: 'ExpressionStatement',
         ForStatement: 'ForStatement',
         ForInStatement: 'ForInStatement',
@@ -12995,6 +13014,27 @@ to decide on the correct name for identifiers.
             result.push(semicolon);
             break;
 
+        case Syntax.ExportDeclaration:
+            result = [stmt.kind];
+
+            // VariableDeclarator is typed as Statement,
+            // but joined with comma (not LineTerminator).
+            // So if comment is attached to target node, we should specialize.
+            withIndent(function () {
+                node = stmt.statement;
+                if (extra.comment && node.leadingComments) {
+                    result.push('\n', generateModuleStatement(node, {
+                        allowIn: allowIn
+                    }));
+                } else {
+                    result.push(' ', generateStatement(node, {
+                        allowIn: allowIn
+                    }));
+                }
+            });
+
+            break;
+
         case Syntax.VariableDeclaration:
             result = [stmt.kind];
             // special path for
@@ -13375,6 +13415,7 @@ to decide on the correct name for identifiers.
         case Syntax.DoWhileStatement:
         case Syntax.DebuggerStatement:
         case Syntax.EmptyStatement:
+        case Syntax.ExportDeclaration:
         case Syntax.ExpressionStatement:
         case Syntax.ForStatement:
         case Syntax.ForInStatement:
