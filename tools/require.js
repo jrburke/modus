@@ -1986,6 +1986,8 @@ var requirejs, require, define, System;
         return eval(text);
     };
 
+    req.sweet = sweet;
+
     //Set up with config info.
     req(cfg);
 }(this));

@@ -2,7 +2,7 @@
 //node r.js -o sweet.build.js
 //Assumes sweetjs git clone is at the baseUrl location below.
 ({
-    baseUrl: '../../sweet.js/src/',
+    baseUrl: '../../sweet.js-jrburke/src/',
     paths: {
         'escodegen': '../browser/scripts/escodegen',
         'underscore': '../browser/scripts/underscore',
@@ -16,7 +16,7 @@
              '         expander: require("expander"),\n' +
              '         parser: require("parser")\n' +
              '};\n' +
-             '}());'
+             '}());\n'
     },
     optimize: 'none',
     out: 'sweet.js'

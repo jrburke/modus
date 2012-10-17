@@ -2870,9 +2870,9 @@ parseStatement: true, parseSourceElement: true */
 /*
 This is a modified version of the esprima parser. It decouples the lexer
 from the parser; lex() and lookahead() don't call advance(), instead they
-just grab the next token from the tokenStream array. 
+just grab the next token from the tokenStream array.
 
-Also, it adds a lisp-style read() function that fully matches all 
+Also, it adds a lisp-style read() function that fully matches all
 delimiters and produces a read tree. Note that the parser still expects
 a flat array not a read tree.
 
@@ -2962,6 +2962,8 @@ to decide on the correct name for identifiers.
         LabeledStatement: 'LabeledStatement',
         LogicalExpression: 'LogicalExpression',
         MemberExpression: 'MemberExpression',
+        ModuleDeclaration: 'ModuleDeclaration',
+        ModuleDeclarator: 'ModuleDeclarator',
         NewExpression: 'NewExpression',
         ObjectExpression: 'ObjectExpression',
         Program: 'Program',
@@ -3040,7 +3042,7 @@ to decide on the correct name for identifiers.
             throw new Error('ASSERT: ' + message);
         }
     }
-    
+
 
     function isIn(el, list) {
         return list.indexOf(el) !== -1;
@@ -3173,6 +3175,11 @@ to decide on the correct name for identifiers.
         // For compatiblity to SpiderMonkey and ES.next
         case 'yield':
         case 'let':
+        case 'from':
+        case 'export':
+        case 'import':
+        case 'module':
+
             return true;
         }
 
@@ -3188,7 +3195,7 @@ to decide on the correct name for identifiers.
     function nextChar() {
         return source[index++];
     }
-    
+
     function getChar() {
         return source[index];
     }
@@ -3931,9 +3938,9 @@ to decide on the correct name for identifiers.
             token.type === Token.BooleanLiteral ||
             token.type === Token.NullLiteral;
     }
-    
 
-    
+
+
     // only used by the reader
     function advance() {
         var ch, token;
@@ -3948,7 +3955,7 @@ to decide on the correct name for identifiers.
                 range: [index, index]
             };
         }
-        
+
         ch = source[index];
 
         token = scanPunctuator();
@@ -4048,7 +4055,7 @@ to decide on the correct name for identifiers.
             }
         }
     }
-    
+
 
     // Throw an exception because of the token.
 
@@ -4155,7 +4162,7 @@ to decide on the correct name for identifiers.
         //     return;
         // }
 
-        
+
         // skipComment();
         // if (lineNumber !== line) {
         //     return;
@@ -4391,6 +4398,14 @@ to decide on the correct name for identifiers.
 
             if (matchKeyword('function')) {
                 return parseFunctionExpression();
+            }
+
+            if (matchKeyword('module') || matchKeyword('export') || matchKeyword('import')) {
+                var name = (extra.noresolve) ? lex().token.value : expander.resolve(lex());
+                return {
+                    type: Syntax.Keyword,
+                    name: name
+                };
             }
         }
 
@@ -5072,6 +5087,82 @@ to decide on the correct name for identifiers.
         };
     }
 
+
+    // JRB: Module Statement
+
+    function parseModuleIdentifier() {
+        var stx = lex(),
+            token = stx.token;
+
+        if (token.type !== Token.Identifier) {
+            throwUnexpected(token);
+        }
+        // note we are intentionally leaving the name as a
+        // syntax object under the noresolve flag, helps with
+        // finding variable idents in the expander
+        var name = (extra.noresolve) ? stx : expander.resolve(stx);
+        return {
+            type: Syntax.Identifier,
+            name: name
+        };
+    }
+
+    function parseModuleDeclaration(kind) {
+        var stx, token, from,
+            id = parseModuleIdentifier(),
+            init = null;
+
+        // 12.2.1
+        if (strict && isRestrictedWord(id.name)) {
+            throwErrorTolerant({}, Messages.StrictVarName);
+        }
+
+        expectKeyword('from');
+
+        stx = lex();
+        token = stx.token;
+        if (token.type !== Token.StringLiteral) {
+            throwUnexpected(token);
+        }
+        from = token.value;
+
+        return {
+            type: Syntax.ModuleDeclarator,
+            id: id,
+            from: from
+        };
+    }
+
+    function parseModuleDeclarationList(kind) {
+        var list = [];
+
+        while (index < length) {
+            list.push(parseModuleDeclaration(kind));
+            if (!match(',')) {
+                break;
+            }
+            lex();
+        }
+
+        return list;
+    }
+
+    function parseModuleStatement() {
+        var declarations;
+
+        expectKeyword('module');
+
+        declarations = parseModuleDeclarationList();
+
+        consumeSemicolon();
+
+        return {
+            type: Syntax.ModuleDeclaration,
+            declarations: declarations,
+            kind: 'module'
+        };
+    }
+
     // kind may be `const` or `let`
     // Both are experimental and not in the specification yet.
     // see http://wiki.ecmascript.org/doku.php?id=harmony:const
@@ -5680,6 +5771,8 @@ to decide on the correct name for identifiers.
                 return parseFunctionDeclaration();
             case 'if':
                 return parseIfStatement();
+            case 'module':
+                return parseModuleStatement();
             case 'return':
                 return parseReturnStatement();
             case 'switch':
@@ -6232,9 +6325,9 @@ to decide on the correct name for identifiers.
                 var node, rangeInfo, locInfo;
 
                 // skipComment();
-                
+
                 var curr = tokenStream[index].token;
-                
+
                 rangeInfo = [curr.range[0], 0];
                 locInfo = {
                     start: {
@@ -6305,7 +6398,7 @@ to decide on the correct name for identifiers.
         if (extra.range || extra.loc) {
 
             wrapTracking = wrapTrackingFunction(extra.range, extra.loc);
-            
+
             extra.parseAdditiveExpression = parseAdditiveExpression;
             extra.parseAssignmentExpression = parseAssignmentExpression;
             extra.parseBitwiseANDExpression = parseBitwiseANDExpression;
@@ -6325,6 +6418,8 @@ to decide on the correct name for identifiers.
             extra.parseFunctionExpression = parseFunctionExpression;
             extra.parseLogicalANDExpression = parseLogicalANDExpression;
             extra.parseLogicalORExpression = parseLogicalORExpression;
+            extra.parseModuleDeclaration = parseModuleDeclaration;
+            extra.parseModuleIdentifier = parseModuleIdentifier;
             extra.parseMultiplicativeExpression = parseMultiplicativeExpression;
             extra.parseNewExpression = parseNewExpression;
             extra.parseNonComputedMember = parseNonComputedMember;
@@ -6342,7 +6437,7 @@ to decide on the correct name for identifiers.
             extra.parseUnaryExpression = parseUnaryExpression;
             extra.parseVariableDeclaration = parseVariableDeclaration;
             extra.parseVariableIdentifier = parseVariableIdentifier;
-            
+
             parseAdditiveExpression = wrapTracking(extra.parseAdditiveExpression);
             parseAssignmentExpression = wrapTracking(extra.parseAssignmentExpression);
             parseBitwiseANDExpression = wrapTracking(extra.parseBitwiseANDExpression);
@@ -6362,6 +6457,8 @@ to decide on the correct name for identifiers.
             parseFunctionExpression = wrapTracking(extra.parseFunctionExpression);
             parseLogicalANDExpression = wrapTracking(extra.parseLogicalANDExpression);
             parseLogicalORExpression = wrapTracking(extra.parseLogicalORExpression);
+            parseModuleDeclaration = wrapTracking(extra.parseModuleDeclaration);
+            parseModuleIdentifier = wrapTracking(extra.parseModuleIdentifier);
             parseMultiplicativeExpression = wrapTracking(extra.parseMultiplicativeExpression);
             parseNewExpression = wrapTracking(extra.parseNewExpression);
             parseNonComputedMember = wrapTracking(extra.parseNonComputedMember);
@@ -6419,6 +6516,8 @@ to decide on the correct name for identifiers.
             parseFunctionExpression = extra.parseFunctionExpression;
             parseLogicalANDExpression = extra.parseLogicalANDExpression;
             parseLogicalORExpression = extra.parseLogicalORExpression;
+            parseModuleDeclaration = extra.parseModuleDeclaration;
+            parseModuleIdentifier = extra.parseModuleIdentifier;
             parseMultiplicativeExpression = extra.parseMultiplicativeExpression;
             parseNewExpression = extra.parseNewExpression;
             parseNonComputedMember = extra.parseNonComputedMember;
@@ -6458,10 +6557,10 @@ to decide on the correct name for identifiers.
         var delimiters = ['(', '{', '['];
         var parenIdents = ["if", "while", "for", "with"];
         var last = toks.length - 1;
-        
+
 
         var fnExprTokens = ["(", "{", "[", "in", "typeof", "instanceof", "new", "return",
-                            "case", "delete", "throw", "void", 
+                            "case", "delete", "throw", "void",
                             // assignment operators
                             "=", "+=", "-=", "*=", "/=", "%=", "<<=", ">>=", ">>>=", "&=", "|=", "^=",
                             ",",
@@ -6471,15 +6570,15 @@ to decide on the correct name for identifiers.
                             "===", "==", ">=", "<=", "<", ">", "!=", "!=="];
         // var fnDeclTokens = [";", "}", ")", "]", ident, literal, "debugger", "break", "continue", "else"];
         // don't need since these are all implicit in the else branch
-        
+
         function back(n) {
             var idx = (toks.length - n > 0) ? (toks.length - n) : 0;
             return toks[idx];
         }
-        
-        
+
+
         skipComment();
-        
+
         if(isIn(getChar(), delimiters)) {
             return readDelim();
         // } else if(getChar() === "#") {
@@ -6487,9 +6586,9 @@ to decide on the correct name for identifiers.
         //     nextChar();
         //     var syntaxTok = readDelim();
         //     syntaxTok.value = "#{}";
-            
+
         //     return syntaxTok;
-        } 
+        }
 
         if(getChar() === "/") {
             var prev = back(1);
@@ -6497,9 +6596,9 @@ to decide on the correct name for identifiers.
                 if (prev.value === "()") {
                     if(isIn(back(2).value, parenIdents)) {
                         return scanRegExp();
-                    } 
+                    }
                     return advance();
-                } 
+                }
                 if(prev.value === "{}") {
                     // named function
                     if(back(4).value === "function") {
@@ -6522,20 +6621,20 @@ to decide on the correct name for identifiers.
                         }
                     }
                     return scanRegExp();
-                } 
+                }
                 if(prev.type === Token.Punctuator) {
                     return scanRegExp();
-                } 
+                }
                 if(isKeyword(toks[toks.length - 1].value)) {
                     return scanRegExp();
-                } 
+                }
                 return advance();
-            } 
+            }
             return scanRegExp();
-        } 
+        }
         return advance();
     }
-    
+
     function readDelim() {
         var startDelim = advance(),
             matchDelim = {
@@ -6544,12 +6643,12 @@ to decide on the correct name for identifiers.
                 '[': ']'
             },
             inner = [];
-        
+
         var delimiters = ['(', '{', '['];
         var token = startDelim;
-        
+
         assert(delimiters.indexOf(startDelim.value) !== -1, "Need to begin at the delimiter");
-        
+
         var startLineNumber = token.lineNumber;
         var startLineStart = token.lineStart;
         var startRange = token.range;
@@ -6561,18 +6660,18 @@ to decide on the correct name for identifiers.
                 inner.push(token);
             }
         }
-        
+
         // at the end of the stream but the very last char wasn't the closing delimiter
         if(index >= length && matchDelim[startDelim.value] !== source[length-1]) {
             throwError({}, Messages.UnexpectedEOS);
         }
-        
+
         var endLineNumber = token.lineNumber;
         var endLineStart = token.lineStart;
         var endRange = token.range;
         return {
             type: Token.Delimiter,
-            value: startDelim.value + matchDelim[startDelim.value], 
+            value: startDelim.value + matchDelim[startDelim.value],
             inner: inner,
             startLineNumber: startLineNumber,
             startLineStart: startLineStart,
@@ -6582,13 +6681,13 @@ to decide on the correct name for identifiers.
             endRange: endRange
         };
     };
-    
-    
-    
+
+
+
     // (Str) -> [...CSyntax]
     function read(code) {
         var token, tokenTree = [];
-        
+
         source = code;
         index = 0;
         lineNumber = (source.length > 0) ? 1 : 0;
@@ -6603,8 +6702,8 @@ to decide on the correct name for identifiers.
             inIteration: false,
             inSwitch: false
         };
-        
-        
+
+
         while(index < length) {
             tokenTree.push(readLoop(tokenTree));
         }
@@ -6618,10 +6717,10 @@ to decide on the correct name for identifiers.
                 range: [index, index]
             });
         }
-        
+
         return expander.tokensToSyntax(tokenTree);
     }
-    
+
 
     // (SyntaxObject, Str, {}) -> SyntaxObject
     function parse(code, nodeType, options) {
@@ -6664,7 +6763,7 @@ to decide on the correct name for identifiers.
                 extra.noresolve = false;
             }
         }
-        
+
         patch();
         try {
             var classToParse = {
@@ -6675,6 +6774,7 @@ to decide on the correct name for identifiers.
                 "lit": parsePrimaryExpression,
                 "LogicalANDExpression": parseLogicalANDExpression,
                 "PrimaryExpression": parsePrimaryExpression,
+                "ModuleDeclarationList": parseModuleDeclarationList,
                 "VariableDeclarationList": parseVariableDeclarationList,
                 "StatementList": parseStatementList,
                 "SourceElements": function() {
@@ -6696,6 +6796,7 @@ to decide on the correct name for identifiers.
                 "TryStatement": parseTryStatement,
                 "WhileStatement": parseWhileStatement,
                 "ForStatement": parseForStatement,
+                "ModuleDeclaration": parseModuleDeclaration,
                 "VariableDeclaration": parseVariableDeclaration,
                 "ArrayExpression": parseArrayInitialiser,
                 "ObjectExpression": parseObjectInitialiser,
@@ -6730,7 +6831,7 @@ to decide on the correct name for identifiers.
 
         return program;
     }
-    
+
 
     // Sync with package.json.
     // exports.version = '1.0.0-dev';
@@ -6870,6 +6971,8 @@ to decide on the correct name for identifiers.
         LabeledStatement: 'LabeledStatement',
         LogicalExpression: 'LogicalExpression',
         MemberExpression: 'MemberExpression',
+        ModuleDeclaration: 'ModuleDeclaration',
+        ModuleDeclarator: 'ModuleDeclarator',
         NewExpression: 'NewExpression',
         ObjectExpression: 'ObjectExpression',
         Program: 'Program',
@@ -7937,6 +8040,10 @@ to decide on the correct name for identifiers.
         return toSourceNode(result, expr);
     }
 
+    function generateModuleStatement(node) {
+        return [node.id.name, ' from ', escapeString(node.from)];
+    }
+
     function generateStatement(stmt, option) {
         var i, len, result, node, allowIn, functionBody, directiveContext, fragment, semicolon;
 
@@ -8063,6 +8170,33 @@ to decide on the correct name for identifiers.
             } else {
                 result = stmt.id.name;
             }
+            break;
+
+        case Syntax.ModuleDeclaration:
+            result = [stmt.kind];
+
+            // VariableDeclarator is typed as Statement,
+            // but joined with comma (not LineTerminator).
+            // So if comment is attached to target node, we should specialize.
+            withIndent(function () {
+                node = stmt.declarations[0];
+                if (extra.comment && node.leadingComments) {
+                    result.push('\n', generateModuleStatement(node));
+                } else {
+                    result.push(' ', generateModuleStatement(node));
+                }
+
+                for (i = 1, len = stmt.declarations.length; i < len; i += 1) {
+                    node = stmt.declarations[i];
+                    if (extra.comment && node.leadingComments) {
+                        result.push(',' + newline, generateModuleStatement(node));
+                    } else {
+                        result.push(',' + space, generateModuleStatement(node));
+                    }
+                }
+            });
+
+            result.push(semicolon);
             break;
 
         case Syntax.VariableDeclaration:
@@ -8451,6 +8585,8 @@ to decide on the correct name for identifiers.
         case Syntax.FunctionDeclaration:
         case Syntax.IfStatement:
         case Syntax.LabeledStatement:
+        case Syntax.ModuleDeclaration:
+        case Syntax.ModuleDeclarator:
         case Syntax.Program:
         case Syntax.ReturnStatement:
         case Syntax.SwitchStatement:
@@ -8531,6 +8667,8 @@ to decide on the correct name for identifiers.
         LabeledStatement: ['label', 'body'],
         LogicalExpression: ['left', 'right'],
         MemberExpression: ['object', 'property'],
+        ModuleDeclaration: ['declarations'],
+        ModuleDeclarator: ['id', 'from'],
         NewExpression: ['callee', 'arguments'],
         ObjectExpression: ['properties'],
         Program: ['body'],
