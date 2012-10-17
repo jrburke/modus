@@ -7,12 +7,13 @@ var fs = require('fs'),
     r = fs.readFileSync(path.join(__dirname, 'require.js'), 'utf8'),
     e = fs.readFileSync(path.join(__dirname, 'esprima.js'), 'utf8'),
     m = fs.readFileSync(path.join(__dirname, 'm.js'), 'utf8'),
+    sweet = fs.readFileSync(path.join(__dirname, 'sweet.js'), 'utf8'),
     combined = '',
     insertIndex = r.indexOf('function isFunction(it) {');
 
 //Brittle: insert esprima after first set of require local variables.
 combined = r.substring(0, insertIndex) +
-           e +
+           e + '\n' + sweet +
            r.substring(insertIndex, r.length);
 
 //Brittle: looking for something after the initial requirejs.load

@@ -6,11 +6,13 @@
 
 /*jslint sloppy: true, regexp: true */
 /*global location, XMLHttpRequest, ActiveXObject, process, require, Packages,
-java, requirejs, document, esprima, eachProp, each, System: true */
+java, requirejs, document, esprima, eachProp, each, sweet, escodegen,
+System: true */
 (function () {
     var commentRegExp = /(\/\*([\s\S]*?)\*\/|([^:]|^)\/\/(.*)$)/mg,
         defineRegExp = /(^|[^\.])define\s*\(/,
         keywordRegExp = /(^|[^\.])(import\s+|export\s+|from\s+)/,
+        macroRegExp = /(^|[^\.])macro\s+/,
         systemRegExp = /System\.\w/,
         moduleNameRegExp = /['"]([^'"]+)['"]/,
         startQuoteRegExp = /^['"]/,
@@ -447,10 +449,24 @@ java, requirejs, document, esprima, eachProp, each, System: true */
 
         if (!hasLocation || useXhr(url, defaultProtocol, defaultHostName, defaultPort)) {
             requirejs.cget(url, function (content) {
+                var temp, tree;
+
                 //Determine if a wrapper is needed. First strip out comments.
                 //This is not bulletproof, but it is good enough for elminating
                 //false positives from comments.
-                var temp = content.replace(commentRegExp, '');
+                temp = content.replace(commentRegExp, '');
+
+                //Convert any static forms
+                /*
+                debugger;
+                tree = sweet.parse(content);
+                var r = sweet.parser.read(content);
+                var e = sweet.expander.expand(r);
+                 */
+                if ((macroRegExp.test(temp))) {
+                    tree = sweet.parse(content);
+                    content = sweet.escodegen.generate(tree);
+                }
 
                 if (!defineRegExp.test(temp) && (keywordRegExp.test(temp) ||
                     systemRegExp.test(temp))) {
