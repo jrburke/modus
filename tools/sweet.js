@@ -1654,14 +1654,14 @@ define("underscore", function(){});
 
     // var CContext = or(Null, object({
     //     mark: opt(Num),
-    //     // id: opt(CSyntax), 
+    //     // id: opt(CSyntax),
     //     name: opt(Str),
     //     context: or(Null, Self)
     // }));
 
     // var CSyntax = object({
     //     token: CToken,
-    //     context: CContext 
+    //     context: CContext
     // });
 
     // var CVar = object({
@@ -1693,7 +1693,7 @@ define("underscore", function(){});
 
     // probably a more javascripty way than faking constructors but screw it
     // (Num) -> CContext
-    function Mark(mark, ctx) { 
+    function Mark(mark, ctx) {
         return {
             mark: mark,
             context: ctx
@@ -1720,14 +1720,14 @@ define("underscore", function(){});
         };
     }
 
-    var isRename = function(r) { 
+    var isRename = function(r) {
         return r && (typeof r.id !== 'undefined') && (typeof r.name !== 'undefined');
     }
 
     function DummyRename(name, ctx) {
         return {
             dummy_name: name,
-            context: ctx      
+            context: ctx
         };
     }
 
@@ -1793,7 +1793,7 @@ define("underscore", function(){});
                 swappedToken.inner = swappedInner;
             }
 
-            return syntaxFromToken(swappedToken, 
+            return syntaxFromToken(swappedToken,
                                     renameDummyCtx(this.context, ident, name, dummyName));
         }
     };
@@ -1801,19 +1801,19 @@ define("underscore", function(){});
     function renameDummyCtx(ctx, ident, name, dummyName) {
         if(ctx === null) {
             return null;
-        } 
+        }
         if(isDummyRename(ctx) && ctx.dummy_name === dummyName) {
             return Rename(ident, name, DummyRename(ctx.dummy_name, ctx.context));
-        } 
+        }
         if(isDummyRename(ctx) && ctx.dummy_name !== dummyName) {
             return DummyRename(ctx.dummy_name, renameDummyCtx(ctx.context, ident, name, dummyName));
-        } 
+        }
         if(isMark(ctx)) {
             return Mark(ctx.mark, renameDummyCtx(ctx.context, ident, name, dummyName));
-        } 
+        }
         if(isRename(ctx)) {
             return Rename(ctx.id, ctx.name, renameDummyCtx(ctx.context, ident, name, dummyName));
-        } 
+        }
         parser.assert(false, "expecting a fixed set of context types");
     }
 
@@ -1854,10 +1854,10 @@ define("underscore", function(){});
             mark = stx.context.mark;
             submarks = marksof(syntaxFromToken(stx.token, stx.context.context));
             return remdup(mark, submarks);
-        } 
+        }
         if(isRename(stx.context) || isDummyRename(stx.context)) {
             return marksof(syntaxFromToken(stx.token, stx.context.context));
-        } 
+        }
         return [];
     }
 
@@ -1865,7 +1865,7 @@ define("underscore", function(){});
     function resolve(stx) {
         if(isMark(stx.context) || isDummyRename(stx.context)) {
             return resolve(syntaxFromToken(stx.token, stx.context.context));
-        } 
+        }
         if (isRename(stx.context)) {
             var idName = resolve(stx.context.id);
             var subName = resolve(syntaxFromToken(stx.token, stx.context.context));
@@ -1875,9 +1875,9 @@ define("underscore", function(){});
 
             if((idName === subName) && (_.difference(idMarks, subMarks).length === 0)) {
                 return stx.token.value + stx.context.name;
-            } 
+            }
             return resolve(syntaxFromToken(stx.token, stx.context.context));
-        } 
+        }
         return stx.token.value;
     }
 
@@ -1899,7 +1899,7 @@ define("underscore", function(){});
                 token.inner = tokensToSyntax(token.inner);
             }
             return syntaxFromToken(token);
-        }); 
+        });
     }
 
     // ([...CSyntax]) -> [...CToken]
@@ -1915,7 +1915,7 @@ define("underscore", function(){});
 
     // CToken -> Bool
     function isPatternVar(token) {
-        return token.type === parser.Token.Identifier 
+        return token.type === parser.Token.Identifier
             && token.value[0] === "$"   // starts with $
             && token.value !== "$";     // but isn't $
     }
@@ -1925,7 +1925,7 @@ define("underscore", function(){});
         return _.any(patterns, function(pat) {
             if(pat.token.type === parser.Token.Delimiter) {
                 return containsPatternVar(pat.token.inner);
-            } 
+            }
             return isPatternVar(pat);
         });
     }
@@ -1946,7 +1946,7 @@ define("underscore", function(){});
                     if(last && isPatternVar(last.token)) {
                         return acc;
                     }
-                } 
+                }
                 if(last && last.token.value === ":") {
                     if(lastLast && isPatternVar(lastLast.token)) {
                         return acc;
@@ -1989,7 +1989,7 @@ define("underscore", function(){});
                 }
 
                 // skip over ... and (,)
-                if(patStx.token.value === "..." 
+                if(patStx.token.value === "..."
                         || (delimIsSeparator(patStx) && next && next.token.value === "...")) {
                     return acc;
                 }
@@ -2028,8 +2028,8 @@ define("underscore", function(){});
             }
         } else {
             try {
-                var parseResult = parser.parse(callStx, 
-                                                pattern.class, 
+                var parseResult = parser.parse(callStx,
+                                                pattern.class,
                                                 {tokens:true});
 
                 consumed = parseResult.tokens.length;
@@ -2107,12 +2107,12 @@ define("underscore", function(){});
                         // parser.assert(false, "sub delimiters in a macro pattern not supported right now, to be fixed with: https://github.com/mozilla/sweet.js/issues/28");
                         var subEnv = buildPatternEnv(callStx[callIdx].token.inner, pattern.token.inner);
                         consumed = subEnv.consumed;
-                        if(consumed !== callStx[callIdx].token.inner.length && repeat === false) { 
+                        if(consumed !== callStx[callIdx].token.inner.length && repeat === false) {
                             matchFailed = true;
                             callIdx = 0;
                             break;
                         }
-                        // consumed is the number of tokens inside the delimiter but we just need to 
+                        // consumed is the number of tokens inside the delimiter but we just need to
                         // move forward one token on this level
                         callIdx += (consumed > 0) ? 1 : 0;
                     }
@@ -2173,7 +2173,7 @@ define("underscore", function(){});
                     }
                 }
 
-                // if we matched no tokens note that the match failed 
+                // if we matched no tokens note that the match failed
                 // so we don't check the remaining patterns and break out
                 // of the repeat loop
                 if(consumed === 0) {
@@ -2259,7 +2259,7 @@ define("underscore", function(){});
 
     // ([...[...CSyntax]], Str) -> [...CSyntax]
     function joinSyntaxArr(tojoin, punc) {
-        if(tojoin.length === 0) { return []; } 
+        if(tojoin.length === 0) { return []; }
         if(punc === " ") {
             return _.flatten(tojoin, true);
         }
@@ -2271,7 +2271,7 @@ define("underscore", function(){});
 
     // (CSyntax) -> Bool
     function delimIsSeparator(delim) {
-        return (delim && delim.token.type === parser.Token.Delimiter 
+        return (delim && delim.token.type === parser.Token.Delimiter
                 && delim.token.value === "()"
                 && delim.token.inner.length === 1
                 && delim.token.inner[0].token.type !== parser.Token.Delimiter
@@ -2311,11 +2311,11 @@ define("underscore", function(){});
 
         var matches = _.chain(_.zip(callSyntax, patterns))
                         .map(function(ziped) {
-                            var call = ziped[0], 
+                            var call = ziped[0],
                                 pat = ziped[1];
 
                             if (pat.token.type === parser.Token.Delimiter) {
-                                if(!(call.token.type === parser.Token.Delimiter 
+                                if(!(call.token.type === parser.Token.Delimiter
                                     && call.token.value === pat.token.value)) {
                                     numberMatched = 0;
                                     return {};
@@ -2359,7 +2359,7 @@ define("underscore", function(){});
     function mkMacroTransformer(macroCases) {
         // grab the patterns from each case and sort them by longest number of patterns
         var sortedCases = _.sortBy(macroCases, function(mcase) {
-                                    return patternLength(mcase.pattern); 
+                                    return patternLength(mcase.pattern);
                                 }).reverse();
 
         return function(callSyntax, macroNameStx) {
@@ -2438,7 +2438,7 @@ define("underscore", function(){});
 
                                 var repeatLength = env[nonScalar].match.length;
                                 var sameLength = _.all(fv, function(pat) {
-                                    return (env[pat].level === 0) 
+                                    return (env[pat].level === 0)
                                             || (env[pat].match.length === repeatLength);
                                 });
                                 parser.assert(sameLength, "all non-scalars must have the same length");
@@ -2483,12 +2483,12 @@ define("underscore", function(){});
                                 var newBody = syntaxFromToken(_.clone(bodyStx.token), bodySyntax.context);
                                 newBody.token.inner = transcribe(bodyStx.token.inner, env);
                                 return acc.concat(newBody);
-                            } 
+                            }
                             if(env[bodyStx.token.value]) {
                                 parser.assert(env[bodyStx.token.value].level === 0, "match ellipses level does not match");
-                                return acc.concat(takeLineContext(macroNameStx, 
+                                return acc.concat(takeLineContext(macroNameStx,
                                                                   env[bodyStx.token.value].match));
-                            } 
+                            }
                             return acc.concat(takeLineContext(macroNameStx, [bodyStx]));
                         }
                     }, []).value();
@@ -2558,7 +2558,7 @@ define("underscore", function(){});
                     lineNumber: stx.token.endLineNumber,
                     lineStart: stx.token.endLineStart
                 }, stx.context));
-            } 
+            }
             return acc.concat(stx);
         }, []);
     }
@@ -2580,7 +2580,7 @@ define("underscore", function(){});
 
     // (CSyntax) -> [...CSyntax]
     function getArgList(argSyntax) {
-        parser.assert(argSyntax.token.type === parser.Token.Delimiter, 
+        parser.assert(argSyntax.token.type === parser.Token.Delimiter,
             "expecting delimiter for function params");
         return _.filter(argSyntax.token.inner, function(stx) {
             return stx.token.value !== ",";
@@ -2610,19 +2610,19 @@ define("underscore", function(){});
             var atFunctionDelimiter;
 
             if (curr.token.type === parser.Token.Delimiter) {
-                atFunctionDelimiter = (curr.token.value === "()" && (isFunctionStx(body[idx-1]) 
+                atFunctionDelimiter = (curr.token.value === "()" && (isFunctionStx(body[idx-1])
                                                                   || isFunctionStx(body[idx-2]))) ||
                                       (curr.token.value === "{}" && (isFunctionStx(body[idx-2])
                                                                   || isFunctionStx(body[idx-3])))
                 // don't look for var idents inside nested functions
                 if(!atFunctionDelimiter) {
                     return acc.concat(getVarIdentifiers(curr.token.inner));
-                } 
+                }
                 return acc;
-            } 
+            }
             if (isVarStx(body[idx-1])) {
-                var parseResult = parser.parse(flatten(body.slice(idx)), 
-                                            "VariableDeclarationList", 
+                var parseResult = parser.parse(flatten(body.slice(idx)),
+                                            "VariableDeclarationList",
                                             {noresolve: true});
                 return acc.concat(varNamesInAST(parseResult));
             }
@@ -2675,7 +2675,8 @@ define("underscore", function(){});
                 var macroBody = stx[index++].token;
 
                 if(doneLoadingMacroDefs) {
-                    parser.assert(false, "all macros must be defined at the top of the scope");
+                    //JRB CHEATING to allow `export macro`
+                    //parser.assert(false, "all macros must be defined at the top of the scope");
                 }
 
                 parser.assert(macroBody.value === "{}", "expecting a macro body");
@@ -2693,7 +2694,7 @@ define("underscore", function(){});
                     consumeRange = _.range(macroDef.toConsume);
                 }
                 var callArgs = _.map(consumeRange, function() {
-                    parser.assert(!(stx[index].token.type === parser.Token.Punctuator && stx[index].token.value === ","), 
+                    parser.assert(!(stx[index].token.type === parser.Token.Punctuator && stx[index].token.value === ","),
                         "commas are not allowed in macro call");
                     return stx[consumeIdx++];
                 });
@@ -2718,7 +2719,7 @@ define("underscore", function(){});
                 if(argsDelim.token.type === parser.Token.Identifier) {
                     functionName = argsDelim;
                     argsDelim = stx[index++];
-                } 
+                }
                 var bodyDelim = stx[index++];
 
                 parser.assert(argsDelim.token.type === parser.Token.Delimiter, "expecting delimiter for function params");
@@ -2736,7 +2737,7 @@ define("underscore", function(){});
                 var renamedArgs = _.map(freshnameArgPairs, function(argPair) {
                     var freshName = argPair[0];
                     var arg = argPair[1];
-                    return arg.rename(arg, freshName); 
+                    return arg.rename(arg, freshName);
                 });
 
                 var newEnv = _.reduce(_.zip(freshNames, renamedArgs), function (accEnv, argPair) {
@@ -2765,7 +2766,7 @@ define("underscore", function(){});
 
                 var varIdents = getVarIdentifiers(flatBody);
                 varIdents = _.filter(varIdents, function(varId) {
-                    // only pick the var identifiers that are not 
+                    // only pick the var identifiers that are not
                     // resolve equal to a parameter of this function
                     return !(_.any(renamedArgs, function(param) {
                         return resolve(varId) === resolve(param);
@@ -2803,7 +2804,7 @@ define("underscore", function(){});
                     ident = env[resolvedIdent].id;
                 } else {
                     // todo is this right?
-                    // ident = mkSyntax(resolvedIdent, Token.Identifier, currStx); 
+                    // ident = mkSyntax(resolvedIdent, Token.Identifier, currStx);
                     ident = currStx
                 }
                 expanded = expanded.concat(ident);
@@ -2817,10 +2818,15 @@ define("underscore", function(){});
             }
         }
 
+        exports.foundMacros = macros;
+
         return expanded;
     }
 
-    exports.expand = expand;
+    exports.expand = function () {
+        exports.foundMacros = {};
+        return expand.apply(null, arguments);
+    };
     exports.resolve = resolve;
     exports.flatten = flatten;
     exports.tokensToSyntax = tokensToSyntax;
