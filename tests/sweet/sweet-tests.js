@@ -59,7 +59,8 @@ function getModule(id) {
         m = registry[id] = {
             text: undefined,
             macros: {},
-            importMacros: {}
+            importMacros: {},
+            staticExports: {}
         };
     }
     return m;
@@ -114,7 +115,7 @@ function extractMacroImports(id, readTree) {
 //This function MODIFIES the readTree to extract the export
 //keywords and to track what things will be exported.
 function extractExportInfo(id, readTree) {
-    var i, token, next, next2, name,
+    var i, token, next, next2, next3, next4, name,
         module = getModule(id);
 
     for (i = 0; i < readTree.length; i += 1) {
@@ -123,7 +124,7 @@ function extractExportInfo(id, readTree) {
             //Look ahead
             next = readTree[i + 1].token;
             next2 = readTree[i + 2].token;
-            if (next.type === 3 && next.value === 'macro') {
+            if (next.type === 3 && next.value === 'macro') { //Identifier
                 //A macro definition. grab the name then extract this
                 //export token since it causes problems later when the
                 //macro tokens are removed.
@@ -133,6 +134,18 @@ function extractExportInfo(id, readTree) {
                 readTree.splice(i, 1);
 
                 module.macros[name] = undefined;
+            } else if (next.type === 4) { //Keyword
+                if (next.value === 'var') {
+                    next3 = readTree[i + 3].token;
+                    next4 = readTree[i + 4].token;
+                    name = next2.value;
+
+                    module.staticExports[name] = next4.value === 'function' ? 'function' : 'var';
+                } else if (next.value === 'function' && next2.type === 3) { //Identifier
+                    module.staticExports[next2.value] = 'function';
+                } else if (next.value === 'module') {
+                    module.staticExports[next2.value] = 'module';
+                }
             }
         }
     }

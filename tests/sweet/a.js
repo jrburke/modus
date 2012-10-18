@@ -4,3 +4,18 @@ export macro def {
   }
 }
 
+export var name = 'a';
+
+export function foo () {
+
+};
+
+export var bar = function() {
+
+};
+
+export var baz = function temp() {
+
+};
+
+export module d from 'd';
