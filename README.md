@@ -112,9 +112,7 @@ scope will be treated the same as `function () {}` scope.
 ## TODO
 
 * Allow the built forms mentioned above.
-* Integrate sweetjs (or something else?) as a proof of concept of a static
-entity working alongside the dynamic, runtime module values.
-* Allow a `System.exports = value`, to allow for cycle dependencies via the
+* Allow a local `System.exports.prop = value`, to allow for cycle dependencies via the
 runtime API?
 * Allow a `System.module` that has a .id and .uri properties that give info on
 the current module? This is similar to the `module` free variable in CommonJS/AMD
@@ -124,3 +122,29 @@ like resolve vs normalize, anything else?
 * Integrate modus parsing into the core of requirejs for the plugin path,
 so transpiled languages can use the modus syntax.
 * Throw if `System.set()` is used with the static `export var name` forms.
+* Only `import y from 'a'` is supported, no destructure type of thing yet. Just a
+lack of getting the parser logic correct, no inherent problem.
+
+# To think about
+
+1) Cycles are only possible via:
+
+    module a from 'a';
+
+not via:
+
+    import y from 'a'
+
+Since the implementation is just using ASTs but then desugaring to JS that runs
+in today's engines -- it cannot seed a function or var placeholder for y such
+that the import works correctly. However, using the module approach just gives
+the exports value for the module, and using `a.y` later works.
+
+2) Is this allowed?
+
+    import bar from 'a';
+    export bar;
+
+The doku wiki just seems to allow ExportSpecifierSet, VariableDeclaration,
+FunctionDeclaration, ModuleDeclaration. Need to figure the exact extent of
+those values, but the names imply it is not.

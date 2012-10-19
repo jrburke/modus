@@ -57,10 +57,14 @@ function getModule(id) {
     var m = registry[id];
     if (!m) {
         m = registry[id] = {
+            deps: [],
+            depsSet: {},
             text: undefined,
             macros: {},
             importMacros: {},
-            staticExports: {}
+            staticExports: {},
+            isDynamic: true,
+            checks: {}
         };
     }
     return m;
@@ -76,11 +80,12 @@ function grind(text) {
     return stripLines(finalText);
 }
 
-//This function MODIFIES the readTree to extract the imports
-//that are macros and grab them from the other modules
-function extractMacroImports(id, readTree) {
-    var i, token, next, next2, next3, name,
-        macros, moduleId, module, macro;
+//This function MODIFIES the readTree to extract the imports.
+//For macros, grab them from the module that defines them.
+function extractImports(id, readTree) {
+    var i, token, next, next2, next3, name, current,
+        macros, moduleId, module, macro,
+        currentModule = getModule(id);
 
     for (i = 0; i < readTree.length; i += 1) {
         token = readTree[i].token;
@@ -91,19 +96,53 @@ function extractMacroImports(id, readTree) {
             next3 = readTree[i + 3].token;
 
             if (next.type === 3) {
-                //A macro definition. grab the name then extract this
-                //export token since it causes problems later when the
-                //macro tokens are removed.
-                //Do not need to roll back i, since it just means the readTree
-                //for loop will just skip over the 'macro' token.
+                //An import.
                 name = next.value;
                 moduleId = next3.value;
                 module = registry[moduleId];
                 macro = module.macros[name];
+                if (!currentModule.depsSet.hasOwnProperty(moduleId)) {
+                    currentModule.deps.push(moduleId);
+                    currentModule.depsSet[moduleId] = true;
+                }
 
                 if (macro) {
-                    getModule(id).importMacros[name] = macro;
+                    //Grab the name then extract this
+                    //export token since it causes problems later when the
+                    //macro tokens are removed.
+                    //Do not need to roll back i, since it just means the readTree
+                    //for loop will just skip over the 'macro' token.
+                    currentModule.importMacros[name] = macro;
                     readTree.splice(i, 4);
+                } else if (module.staticExports.hasOwnProperty(name)) {
+                    currentModule.checks.staticImport = true;
+                    if (currentModule.checks.dynamicImport) {
+                        throw new Error('"' + id + '": static and dynamic import not allowed');
+                    }
+                } else {
+                    throw new Error('"' + moduleId + '" does not export "' + name + '"');
+                }
+            }
+        } else if (token.type === 3 && token.value === 'System') {
+            next = readTree[i + 1].token;
+            next2 = readTree[i + 2].token;
+            next3 = readTree[i + 3].token;
+            if (next.value === '.' && next2.value === 'get' &&
+                    next3.value === '()' && next3.inner.length === 1) {
+                current = next3.inner[0].token;
+
+                //Mark that a dynamic import was done, restricts static import use.
+                currentModule.checks.dynamicImport = true;
+                if (currentModule.checks.staticImport) {
+                    throw new Error('"' + id + '": static and dynamic import not allowed');
+                }
+
+                if (current.type === 8) {
+                    name = current.value;
+                    if (!currentModule.depsSet.hasOwnProperty(name)) {
+                        currentModule.deps.push(name);
+                        currentModule.depsSet[name] = true;
+                    }
                 }
             }
         }
@@ -121,6 +160,7 @@ function extractExportInfo(id, readTree) {
     for (i = 0; i < readTree.length; i += 1) {
         token = readTree[i].token;
         if (token.type === 4 && token.value === 'export') {
+
             //Look ahead
             next = readTree[i + 1].token;
             next2 = readTree[i + 2].token;
@@ -135,6 +175,17 @@ function extractExportInfo(id, readTree) {
 
                 module.macros[name] = undefined;
             } else if (next.type === 4) { //Keyword
+
+                //Mark that a dynamic export was done, restricts static export use.
+                module.checks.staticExport = true;
+                if (module.checks.dynamicExport) {
+                    throw new Error('"' + id + '": static and dynamic export not allowed.');
+                }
+
+                //Mark the module as not dynamic,
+                //since a non-macro static export was indicated.
+                module.isDynamic = false;
+
                 if (next.value === 'var') {
                     next3 = readTree[i + 3].token;
                     next4 = readTree[i + 4].token;
@@ -147,6 +198,16 @@ function extractExportInfo(id, readTree) {
                     module.staticExports[next2.value] = 'module';
                 }
             }
+        } else if (token.type === 3 && token.value === 'System') {
+            next = readTree[i + 1].token;
+            next2 = readTree[i + 2].token;
+            if (next.value === '.' && next2.value === 'set') {
+                //Mark that a dynamic export was done, restricts static export use.
+                module.checks.dynamicExport = true;
+                if (module.checks.staticExport) {
+                    throw new Error('"' + id + '": static and dynamic export not allowed.');
+                }
+            }
         }
     }
 }
@@ -157,7 +218,7 @@ function grindWithMacros(id, text) {
         module = getModule(id);
 
     readTree = sweet.parser.read(text);
-    macros = extractMacroImports(id, readTree);
+    macros = extractImports(id, readTree);
     extractExportInfo(id, readTree);
 
     expanded = sweet.expander.expand(readTree, module.importMacros);
@@ -168,6 +229,7 @@ function grindWithMacros(id, text) {
         module.macros[prop] = foundMacros[prop];
     });
 
+    //Expand macros to end up with final module text.
     flattened = sweet.expander.flatten(expanded);
     ast = sweet.parser.parse(flattened);
     finalText = sweet.escodegen.generate(ast);
@@ -191,14 +253,12 @@ function parse(text) {
     return syntax;
 }
 
-console.log('FETCHED: ' + fetch('a.js'));
-
 doh.register(
     "sweetTests",
     [
         function sweetTests(t) {
             'use strict';
-            var text, a, b, aResult, bResult;
+            var text, a, b, e, aResult, bResult;
 
             text = "module b from 'b';";
             t.is(text, grind(text));
@@ -212,11 +272,13 @@ doh.register(
             //Try a macro extraction for use in another "module"
             a = fetch('a.js');
             b = fetch('b.js');
+            e = fetch('e.js');
 
             grindWithMacros('a', a);
             grindWithMacros('b', b);
+            grindWithMacros('e', e);
 
-            console.log('transformed b.js is: ' + registry.b.text);
+            //console.log('transformed b.js is: ' + registry.b.text);
         }
     ]
 );

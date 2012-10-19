@@ -1,1 +1,5 @@
-export var name = 'd';
+
+//Test just calling an export
+System.set({
+    name: 'd'
+});
