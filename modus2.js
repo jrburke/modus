@@ -1272,6 +1272,12 @@ var Loader, System, modus;
             },
 
             exec: function () {
+                //If a factory already, a loader.load() call, skip to the
+                //next step.
+                if (this.factory) {
+                    return this.register(this.factory);
+                }
+
                 //Compile down to the JavaScript Of Today
                 var content = compile(this.map.url, this.modus.text).text,
                     register = this.register;
@@ -1289,11 +1295,13 @@ var Loader, System, modus;
                     content = "'use strict;'\n" + content;
                 }
 
-                modus.exec(content, bind(this.register));
+                modus.exec(content, bind(this, this.register));
             },
 
             register: function (factory) {
-                this.init(this.modus.deps, factory);
+                this.factory = factory;
+                this.registered = true;
+                this.check();
             },
 
             /**
@@ -1308,30 +1316,38 @@ var Loader, System, modus;
                 var err, cjsModule, System,
                     id = this.map.id,
                     depExports = this.depExports,
-                    exports = this.exports,
-                    factory = this.factory;
+                    exports = this.exports = {},
+                    factory = this.factory,
+                    args = [];
 
                 if (!this.inited) {
                     this.fetch();
                 } else if (this.error) {
                     this.emit('error', this.error);
-                } else if (this.staticDone && !this.evalDone) {
+                } else if (!this.registered && this.depCount < 1 && this.staticDone) {
                     this.exec();
-                    this.evalDone = true;
-                } else if (!this.defining) {
+                } else if (this.registered && !this.defining) {
                     //The factory could trigger another require call
                     //that would result in checking this module to
                     //define itself again. If already in the process
                     //of doing that, skip this work.
                     this.defining = true;
 
-
                     System = makeLocalSystem(this.map);
-                    System.set = function (value) {
-                        this.module.exports = value;
-                    };
-                    System.exports = exports;
-                    System.module = this.module;
+
+                    if (this.map.isDefine) {
+                        System.set = function (value) {
+                            this.module.exports = value;
+                        };
+                        System.exports = exports;
+                        System.module = this.module;
+
+                        args.push(System);
+                    } else {
+                        args = this.depMaps.map(function (depMap) {
+                            return System.get(depMap.id);
+                        });
+                    }
 
                     if (this.depCount < 1 && !this.defined) {
                         if (isFunction(factory)) {
@@ -1339,12 +1355,12 @@ var Loader, System, modus;
                             //to that instead of throwing an error.
                             if (this.events.error) {
                                 try {
-                                    context.execCb(id, factory, System);
+                                    context.execCb(id, factory, args);
                                 } catch (e) {
                                     err = e;
                                 }
                             } else {
-                                context.execCb(id, factory, System);
+                                context.execCb(id, factory, args);
                             }
 
                             if (this.map.isDefine) {
@@ -1861,8 +1877,8 @@ var Loader, System, modus;
              * solely to allow the build system to sequence the files in the built
              * layer in the right sequence.
              */
-            execCb: function (id, factory, System) {
-                return factory.call(System);
+            execCb: function (id, factory, args) {
+                return factory.apply(System.exports, args);
             }
         });
 
