@@ -896,6 +896,18 @@ var Loader, System, modus;
             return system;
         }
 
+        //Make the public version of System.module for use by the module.
+        function makePublicModule(mod) {
+            return {
+                id: mod.map.id,
+                uri: mod.map.url,
+                config: function () {
+                    return (config.config && config.config[mod.map.id]) || {};
+                },
+                exports: defined[mod.map.id]
+            };
+        }
+
         Module = function (map) {
             this.events = undefEvents[map.id] || {};
             this.map = map;
@@ -910,7 +922,7 @@ var Loader, System, modus;
 
             this.modus = {
                 deps: [],
-                depSet: {},
+                depsSet: {},
                 text: undefined,
                 macros: {},
                 importMacros: {},
@@ -964,6 +976,22 @@ var Loader, System, modus;
                                 throw new Error('"' + moduleId + '" does not export "' + name + '"');
                             }
                         }
+
+                    } else if (token.type === 4 && token.value === 'module') {
+                        next = readTree[i + 1].token;
+                        next2 = readTree[i + 2].token;
+                        next3 = readTree[i + 3].token;
+
+                        if (next.type === 3 &&
+                                next2.type === 4 && next2.value === 'from' &&
+                                next3.type === 8) {
+                            name = next3.value;
+                            if (!this.modus.depsSet.hasOwnProperty(name)) {
+                                this.modus.deps.push(name);
+                                this.modus.depsSet[name] = true;
+                            }
+                        }
+
                     } else if (token.type === 3 && token.value === 'System') {
                         next = readTree[i + 1].token;
                         next2 = readTree[i + 2].token;
@@ -1320,6 +1348,10 @@ var Loader, System, modus;
                     factory = this.factory,
                     args = [];
 
+                defined[this.map.id] = exports;
+
+                this.module = makePublicModule(this);
+
                 if (!this.inited) {
                     this.fetch();
                 } else if (this.error) {
@@ -1336,9 +1368,9 @@ var Loader, System, modus;
                     System = makeLocalSystem(this.map);
 
                     if (this.map.isDefine) {
-                        System.set = function (value) {
+                        System.set = (bind(this, function (value) {
                             this.module.exports = value;
-                        };
+                        }));
                         System.exports = exports;
                         System.module = this.module;
 
