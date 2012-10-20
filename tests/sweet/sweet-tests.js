@@ -101,9 +101,9 @@ function extractImports(id, readTree) {
                 moduleId = next3.value;
                 module = registry[moduleId];
                 macro = module.macros[name];
-                if (!currentModule.depsSet.hasOwnProperty(moduleId)) {
-                    currentModule.deps.push(moduleId);
-                    currentModule.depsSet[moduleId] = true;
+                if (!currentModule.modus.depsSet.hasOwnProperty(moduleId)) {
+                    currentModule.modus.deps.push(moduleId);
+                    currentModule.modus.depsSet[moduleId] = true;
                 }
 
                 if (macro) {
@@ -112,11 +112,11 @@ function extractImports(id, readTree) {
                     //macro tokens are removed.
                     //Do not need to roll back i, since it just means the readTree
                     //for loop will just skip over the 'macro' token.
-                    currentModule.importMacros[name] = macro;
+                    currentModule.modus.importMacros[name] = macro;
                     readTree.splice(i, 4);
                 } else if (module.staticExports.hasOwnProperty(name)) {
-                    currentModule.checks.staticImport = true;
-                    if (currentModule.checks.dynamicImport) {
+                    currentModule.modus.checks.staticImport = true;
+                    if (currentModule.modus.checks.dynamicImport) {
                         throw new Error('"' + id + '": static and dynamic import not allowed');
                     }
                 } else {
@@ -132,16 +132,16 @@ function extractImports(id, readTree) {
                 current = next3.inner[0].token;
 
                 //Mark that a dynamic import was done, restricts static import use.
-                currentModule.checks.dynamicImport = true;
-                if (currentModule.checks.staticImport) {
+                currentModule.modus.checks.dynamicImport = true;
+                if (currentModule.modus.checks.staticImport) {
                     throw new Error('"' + id + '": static and dynamic import not allowed');
                 }
 
                 if (current.type === 8) {
                     name = current.value;
-                    if (!currentModule.depsSet.hasOwnProperty(name)) {
-                        currentModule.deps.push(name);
-                        currentModule.depsSet[name] = true;
+                    if (!currentModule.modus.depsSet.hasOwnProperty(name)) {
+                        currentModule.modus.deps.push(name);
+                        currentModule.modus.depsSet[name] = true;
                     }
                 }
             }
@@ -173,29 +173,29 @@ function extractExportInfo(id, readTree) {
                 name = next2.value;
                 readTree.splice(i, 1);
 
-                module.macros[name] = undefined;
+                module.modus.macros[name] = undefined;
             } else if (next.type === 4) { //Keyword
 
                 //Mark that a dynamic export was done, restricts static export use.
-                module.checks.staticExport = true;
-                if (module.checks.dynamicExport) {
+                module.modus.checks.staticExport = true;
+                if (module.modus.checks.dynamicExport) {
                     throw new Error('"' + id + '": static and dynamic export not allowed.');
                 }
 
                 //Mark the module as not dynamic,
                 //since a non-macro static export was indicated.
-                module.isDynamic = false;
+                module.modus.isDynamic = false;
 
                 if (next.value === 'var') {
                     next3 = readTree[i + 3].token;
                     next4 = readTree[i + 4].token;
                     name = next2.value;
 
-                    module.staticExports[name] = next4.value === 'function' ? 'function' : 'var';
+                    module.modus.staticExports[name] = next4.value === 'function' ? 'function' : 'var';
                 } else if (next.value === 'function' && next2.type === 3) { //Identifier
-                    module.staticExports[next2.value] = 'function';
+                    module.modus.staticExports[next2.value] = 'function';
                 } else if (next.value === 'module') {
-                    module.staticExports[next2.value] = 'module';
+                    module.modus.staticExports[next2.value] = 'module';
                 }
             }
         } else if (token.type === 3 && token.value === 'System') {
@@ -203,8 +203,8 @@ function extractExportInfo(id, readTree) {
             next2 = readTree[i + 2].token;
             if (next.value === '.' && next2.value === 'set') {
                 //Mark that a dynamic export was done, restricts static export use.
-                module.checks.dynamicExport = true;
-                if (module.checks.staticExport) {
+                module.modus.checks.dynamicExport = true;
+                if (module.modus.checks.staticExport) {
                     throw new Error('"' + id + '": static and dynamic export not allowed.');
                 }
             }
@@ -221,12 +221,12 @@ function grindWithMacros(id, text) {
     macros = extractImports(id, readTree);
     extractExportInfo(id, readTree);
 
-    expanded = sweet.expander.expand(readTree, module.importMacros);
+    expanded = sweet.expander.expand(readTree, module.modus.importMacros);
     foundMacros = sweet.expander.foundMacros;
 
     //For any export of a macro, attach the macro definition to it.
-    eachProp(module.macros, function (value, prop) {
-        module.macros[prop] = foundMacros[prop];
+    eachProp(module.modus.macros, function (value, prop) {
+        module.modus.macros[prop] = foundMacros[prop];
     });
 
     //Expand macros to end up with final module text.
@@ -234,7 +234,7 @@ function grindWithMacros(id, text) {
     ast = sweet.parser.parse(flattened);
     finalText = sweet.escodegen.generate(ast);
 
-    module.text = finalText;
+    module.modus.text = finalText;
 }
 
 function fetch(path) {
