@@ -6,13 +6,19 @@ var fs = require('fs'),
     path = require('path'),
     m = fs.readFileSync(path.join(__dirname, 'm2.js'), 'utf8'),
     sweet = fs.readFileSync(path.join(__dirname, 'sweet.js'), 'utf8'),
+    esprima = fs.readFileSync(path.join(__dirname, 'esprima.js'), 'utf8'),
     combined = '',
     sweetMarker = '//INSERT SWEET HERE',
-    insertIndex = m.indexOf(sweetMarker);
+    esprimaMarker = '//INSERT ESPRIMA HERE',
+    esprimaIndex = m.indexOf(esprimaMarker),
+    sweetIndex = m.indexOf(sweetMarker);
 
-//Brittle: insert esprima after first set of require local variables.
-combined = m.substring(0, insertIndex + sweetMarker.length) +
+combined = m.substring(0, sweetIndex + sweetMarker.length) +
            '\n' + sweet +
-           m.substring(insertIndex + sweetMarker.length, m.length);
+           m.substring(sweetIndex + sweetMarker.length, m.length);
+
+combined = combined.substring(0, esprimaIndex + esprimaMarker.length) +
+           '\n' + esprima +
+           combined.substring(esprimaIndex + esprimaMarker.length, combined.length);
 
 fs.writeFileSync(path.join(__dirname, '..', 'modus2.js'), combined, 'utf8');

@@ -4,18 +4,24 @@
  * see: http://github.com/jrburke/modus for details
  */
 
-/*jslint sloppy: true, nomen: true */
+//Not strict because evaling non-strict code from plugins causes unnecesary
+//problems.
+/*jslint sloppy: true, nomen: true, regexp: true */
 /*global window, navigator, document, XMLHttpRequest, console, importScripts,
   setTimeout */
 var Loader, System, modus;
 (function (global) {
     var sweet,
+        esprima = {},
         contexts = {},
         lineEndRegExp = /[\r\n]\s*/g,
         jsSuffixRegExp = /\.js$/,
         currDirRegExp = /^\.\//,
         //Used to filter out dependencies that are already paths.
         jsExtRegExp = /^\/|:|\?|\.js$/,
+        moduleNameRegExp = /['"]([^'"]+)['"]/,
+        startQuoteRegExp = /^['"]/,
+        sourceUrlRegExp = /\/\/@\s+sourceURL=/,
         op = Object.prototype,
         ostring = op.toString,
         hasOwn = op.hasOwnProperty,
@@ -132,16 +138,6 @@ var Loader, System, modus;
         return e;
     }
 
-    function exec(content) {
-        /*jslint evil: true */
-        return eval(content);
-    }
-
-    function strictExec(content) {
-        /*jslint evil: true */
-        return eval("'use strict';\n" + content);
-    }
-
     /**
      * Trims the . and .. from an array of path segments.
      * It will keep a leading path segment if a .. will become
@@ -174,6 +170,266 @@ var Loader, System, modus;
             }
         }
     }
+
+    /**
+     * Strips off quotes
+     * @param {String} id
+     * @returns id
+     */
+    function cleanModuleId(id) {
+        return moduleNameRegExp.exec(id)[1];
+    }
+
+    function convertImportSyntax(tokens, start, end, moduleTarget) {
+        var token = tokens[start],
+            cursor = start,
+            replacement = '',
+            localVars = {},
+            moduleRef,
+            moduleId,
+            star,
+            currentVar;
+
+        //Convert module target to a usable name. If a string,
+        //then needs to be accessed via require()
+        if (startQuoteRegExp.test(moduleTarget)) {
+            moduleId = cleanModuleId(moduleTarget);
+            moduleRef = 'System.get("' + moduleId + '")';
+        } else {
+            moduleRef = moduleTarget;
+        }
+
+        //DO NOT SUPPORT import * for NOW
+        /*
+        if (token.type === 'Punctuator' && token.value === '*') {
+            //import * from z
+            //If not using a module ID that is a require call, then
+            //discard it.
+            if (moduleId) {
+                star = moduleId;
+                replacement = '/\*IMPORTSTAR:' + star + '\*\/\n';
+            } else {
+                throw new Error('import * on local reference ' + moduleTarget +
+                                ' no supported.');
+            }
+        } else */
+        if (token.type === 'Identifier') {
+            //import y from z
+            replacement += 'var ' + token.value + ' = ' +
+                            moduleRef + '.' + token.value + ';';
+        } else if (token.type === 'Punctuator' && token.value === '{') {
+            //import {y} from z
+            //import {x, y} from z
+            //import {x: localX, y: localY} from z
+            cursor += 1;
+            token = tokens[cursor];
+            while (cursor !== end && token.value !== '}') {
+                if (token.type === 'Identifier') {
+                    if (currentVar) {
+                        localVars[currentVar] = token.value;
+                        currentVar = null;
+                    } else {
+                        currentVar = token.value;
+                    }
+                } else if (token.type === 'Punctuator') {
+                    if (token.value === ',') {
+                        if (currentVar) {
+                            localVars[currentVar] = currentVar;
+                            currentVar = null;
+                        }
+                    }
+                }
+                cursor += 1;
+                token = tokens[cursor];
+            }
+            if (currentVar) {
+                localVars[currentVar] = currentVar;
+            }
+
+            //Now serialize the localVars
+            eachProp(localVars, function (localName, importProp) {
+                replacement += 'var ' + localName + ' = ' +
+                                moduleRef + '.' + importProp + ';\n';
+            });
+        } else {
+            throw new Error('Invalid import: import ' +
+                token.value + ' ' + tokens[start + 1].value +
+                ' ' + tokens[start + 2].value);
+        }
+
+        return {
+            star: star,
+            replacement: replacement
+        };
+    }
+
+    function convertModuleSyntax(tokens, i) {
+        //Converts `foo = 'bar'` to `foo = require('bar')`
+        var varName = tokens[i],
+            eq = tokens[i + 1],
+            id = tokens[i + 2];
+
+        if (varName.type === 'Identifier' &&
+                eq.value === 'from' &&
+                id.type === 'String') {
+            return varName.value + ' = System.get("' + cleanModuleId(id.value) + '")';
+        } else {
+            throw new Error('Invalid module reference: module ' +
+                varName.value + ' ' + eq.value + ' ' + id.value);
+        }
+    }
+
+    function compile(path, text) {
+        var stars = [],
+            moduleMap = {},
+            transforms = {},
+            targets = [],
+            currentIndex = 0,
+            transformedText = text,
+            transformInputText,
+            startIndex,
+            segmentIndex,
+            match,
+            tempText,
+            transformed,
+            tokens;
+
+        try {
+            tokens = esprima.parse(text, {
+                tokens: true,
+                range: true
+            }).tokens;
+        } catch (e) {
+            throw new Error('Esprima cannot parse: ' + path + ': ' + e);
+        }
+
+        each(tokens, function (token, i) {
+            if (token.type !== 'Keyword' && token.type !== 'Identifier') {
+                //Not relevant, skip
+                return;
+            }
+
+            var next = tokens[i + 1],
+                next2 = tokens[i + 2],
+                next3 = tokens[i + 3],
+                cursor = i,
+                replacement,
+                moduleTarget,
+                target,
+                convertedImport;
+
+            if (token.value === 'export') {
+                // EXPORTS
+                if (next.type === 'Keyword') {
+                    if (next.value === 'var' || next.value === 'let') {
+                        targets.push({
+                            start: token.range[0],
+                            end: next2.range[0],
+                            replacement: 'System.exports.'
+                        });
+                    } else if (next.value === 'function' && next2.type === 'Identifier') {
+                        targets.push({
+                            start: token.range[0],
+                            end: next2.range[1],
+                            replacement: 'System.exports.' + next2.value +
+                                         ' = function '
+                        });
+                    } else {
+                        throw new Error('Invalid export: ' + token.value +
+                                        ' ' + next.value + ' ' + tokens[i + 2]);
+                    }
+                } else if (next.type === 'Identifier') {
+                    targets.push({
+                        start: token.range[0],
+                        end: next.range[1],
+                        replacement: 'System.exports.' + next.value +
+                                     ' = ' + next.value
+                    });
+                } else {
+                    throw new Error('Invalid export: ' + token.value +
+                                        ' ' + next.value + ' ' + tokens[i + 2]);
+                }
+            } else if (token.value === 'module') {
+                // MODULE
+                // module Bar = "bar.js";
+                replacement = 'var ';
+                target = {
+                    start: token.range[0]
+                };
+
+                while (token.value === 'module' || (token.type === 'Punctuator'
+                        && token.value === ',')) {
+                    cursor = cursor + 1;
+                    replacement += convertModuleSyntax(tokens, cursor);
+                    token = tokens[cursor + 3];
+                    //Current module spec does not allow for
+                    //module a = 'a', b = 'b';
+                    //must end in semicolon. But keep this in case for later,
+                    //as comma separators would be nice.
+                    //esprima will throw if comma is not allowed.
+                    if ((token.type === 'Punctuator' && token.value === ',')) {
+                        replacement += ',\n';
+                    }
+                }
+
+                target.end = token.range[0];
+                target.replacement = replacement;
+                targets.push(target);
+            } else if (token.value === 'import') {
+                // IMPORT
+                //import * from z;
+                //import y from z;
+                //import {y} from z;
+                //import {x, y} from z;
+                //import {x: localX, y: localY} from z;
+                cursor = i;
+                //Find the "from" in the stream
+                while (tokens[cursor] &&
+                        (tokens[cursor].type !== 'Identifier' ||
+                        tokens[cursor].value !== 'from')) {
+                    cursor += 1;
+                }
+
+                //Increase cursor one more value to find the module target
+                moduleTarget = tokens[cursor + 1].value;
+                convertedImport = convertImportSyntax(tokens, i + 1, cursor - 1, moduleTarget);
+                replacement = convertedImport.replacement;
+                if (convertedImport.star) {
+                    stars.push(convertedImport.star);
+                }
+
+                targets.push({
+                    start: token.range[0],
+                    end: tokens[cursor + 3].range[0],
+                    replacement: replacement
+                });
+            }
+        });
+
+        //Now sort all the targets, but by start position, with the
+        //furthest start position first, since we need to transpile
+        //in reverse order.
+        targets.sort(function (a, b) {
+            return a.start > b.start ? -1 : 1;
+        });
+
+        //Now walk backwards through targets and do source modifications
+        //to AMD. Going backwards is important since the modifications will
+        //modify the length of the string.
+        each(targets, function (target, i) {
+            transformedText = transformedText.substring(0, target.start) +
+                              target.replacement +
+                              transformedText.substring(target.end, transformedText.length);
+        });
+
+        return {
+            text: "register(function (System) {\n" +
+                  transformedText +
+                  '\n});',
+            stars: stars
+        };
+    }
+
 
     function generateContextName(name) {
         if (!name || contexts.hasOwnProperty(name)) {
@@ -793,7 +1049,6 @@ var Loader, System, modus;
                 }
             },
 
-
             textFetched: function (text) {
                 //Raw text for the module.
                 this.modus.readTree = sweet.parser.read(text);
@@ -801,6 +1056,7 @@ var Loader, System, modus;
                 this.extractImports();
                 this.extractExports();
 
+                this.init(this.modus.deps);
                 this.staticCheck();
             },
 
@@ -1015,6 +1271,31 @@ var Loader, System, modus;
                 this.check();
             },
 
+            exec: function () {
+                //Compile down to the JavaScript Of Today
+                var content = compile(this.map.url, this.modus.text).text,
+                    register = this.register;
+
+                //Add sourceURL, but only if one is not already there.
+                if (!sourceUrlRegExp.test(content)) {
+                    //IE with conditional comments on cannot handle the
+                    //sourceURL trick, so skip it if enabled.
+                    /*@if (@_jscript) @else @*/
+                    content += "\r\n//@ sourceURL=" + this.map.url;
+                    /*@end@*/
+                }
+
+                if (context.config.strict) {
+                    content = "'use strict;'\n" + content;
+                }
+
+                modus.exec(content, bind(this.register));
+            },
+
+            register: function (factory) {
+                this.init(this.modus.deps, factory);
+            },
+
             /**
              * Checks is the module is ready to define itself, and if so,
              * define it.
@@ -1024,7 +1305,7 @@ var Loader, System, modus;
                     return;
                 }
 
-                var err, cjsModule,
+                var err, cjsModule, System,
                     id = this.map.id,
                     depExports = this.depExports,
                     exports = this.exports,
@@ -1034,6 +1315,9 @@ var Loader, System, modus;
                     this.fetch();
                 } else if (this.error) {
                     this.emit('error', this.error);
+                } else if (this.staticDone && !this.evalDone) {
+                    this.exec();
+                    this.evalDone = true;
                 } else if (!this.defining) {
                     //The factory could trigger another require call
                     //that would result in checking this module to
@@ -1041,18 +1325,26 @@ var Loader, System, modus;
                     //of doing that, skip this work.
                     this.defining = true;
 
+
+                    System = makeLocalSystem(this.map);
+                    System.set = function (value) {
+                        this.module.exports = value;
+                    };
+                    System.exports = exports;
+                    System.module = this.module;
+
                     if (this.depCount < 1 && !this.defined) {
                         if (isFunction(factory)) {
                             //If there is an error listener, favor passing
                             //to that instead of throwing an error.
                             if (this.events.error) {
                                 try {
-                                    exports = context.execCb(id, factory, depExports, exports);
+                                    context.execCb(id, factory, System);
                                 } catch (e) {
                                     err = e;
                                 }
                             } else {
-                                exports = context.execCb(id, factory, depExports, exports);
+                                context.execCb(id, factory, System);
                             }
 
                             if (this.map.isDefine) {
@@ -1065,9 +1357,6 @@ var Loader, System, modus;
                                         //Make sure it is not already the exports value
                                         cjsModule.exports !== this.exports) {
                                     exports = cjsModule.exports;
-                                } else if (exports === undefined && this.usingExports) {
-                                    //exports already set the defined value.
-                                    exports = this.exports;
                                 }
                             }
 
@@ -1565,6 +1854,15 @@ var Loader, System, modus;
                 xhr.send(null);
 
                 return xhr;
+            },
+
+            /**
+             * Executes a module factory function. Broken out as a separate function
+             * solely to allow the build system to sequence the files in the built
+             * layer in the right sequence.
+             */
+            execCb: function (id, factory, System) {
+                return factory.call(System);
             }
         });
 
@@ -1611,10 +1909,21 @@ var Loader, System, modus;
 
     System = new global.Loader();
 
-    //Expose all the contexts, just for debugging.
-    modus = {
-        contexts: contexts
-    };
+    //INSERT ESPRIMA HERE
 
     //INSERT SWEET HERE
+
+    //Expose all the contexts, just for debugging.
+    modus = {
+        contexts: contexts,
+        esprima: esprima,
+        sweet: sweet
+    };
 }(this));
+
+//Do this outside the closure, so the eval does not
+//see the modus internals.
+modus.exec = function (text, register) {
+    /*jslint evil: true */
+    eval(text);
+};
