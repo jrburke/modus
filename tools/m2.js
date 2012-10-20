@@ -48,7 +48,7 @@ var Loader, System, modus;
         if (ary) {
             var i;
             for (i = 0; i < ary.length; i += 1) {
-                if (ary[i] && func(ary[i], i, ary)) {
+                if (ary[i] !== undefined && func(ary[i], i, ary)) {
                     break;
                 }
             }
@@ -63,7 +63,7 @@ var Loader, System, modus;
         if (ary) {
             var i;
             for (i = ary.length - 1; i > -1; i -= 1) {
-                if (ary[i] && func(ary[i], i, ary)) {
+                if (ary[i] !== undefined && func(ary[i], i, ary)) {
                     break;
                 }
             }
