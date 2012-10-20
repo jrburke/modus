@@ -925,9 +925,11 @@ var Loader, System, modus;
                 depsSet: {},
                 text: undefined,
                 macros: {},
+                maybeStaticImportIndex: {},
                 importMacros: {},
+                staticImports: {},
+                dynamicImports: {},
                 staticExports: {},
-                isDynamic: true,
                 checks: {}
             };
 
@@ -937,7 +939,7 @@ var Loader, System, modus;
 
             extractImports: function () {
                 var i, token, next, next2, next3, name, current,
-                    macros, moduleId, module, macro,
+                    macros, moduleId,
                     readTree = this.modus.readTree;
 
                 for (i = 0; i < readTree.length; i += 1) {
@@ -950,33 +952,20 @@ var Loader, System, modus;
 
                         if (next.type === 3) {
                             //An import.
-                            name = next.value;
+                            name = context.resolve(next.value, this.map.id, true);
                             moduleId = next3.value;
-                            module = registry[moduleId];
-                            macro = module.macros[name];
                             if (!this.modus.depsSet.hasOwnProperty(moduleId)) {
                                 this.modus.deps.push(moduleId);
                                 this.modus.depsSet[moduleId] = true;
                             }
 
-                            if (macro) {
-                                //Grab the name then extract this
-                                //export token since it causes problems later when the
-                                //macro tokens are removed.
-                                //Do not need to roll back i, since it just means the readTree
-                                //for loop will just skip over the 'macro' token.
-                                this.modus.importMacros[name] = macro;
-                                readTree.splice(i, 4);
-                            } else if (module.staticExports.hasOwnProperty(name)) {
-                                this.modus.checks.staticImport = true;
-                                if (this.modus.checks.dynamicImport) {
-                                    throw new Error('"' + this.map.id + '": static and dynamic import not allowed');
-                                }
-                            } else {
-                                throw new Error('"' + moduleId + '" does not export "' + name + '"');
-                            }
-                        }
+                            this.modus.staticImports[name] = moduleId;
 
+                            //Remember import location because if a macro ref,
+                            //will need to remove it later for the transform
+                            //to work given current tools
+                            this.modus.maybeStaticImportIndex[name] = i;
+                        }
                     } else if (token.type === 4 && token.value === 'module') {
                         next = readTree[i + 1].token;
                         next2 = readTree[i + 2].token;
@@ -985,7 +974,7 @@ var Loader, System, modus;
                         if (next.type === 3 &&
                                 next2.type === 4 && next2.value === 'from' &&
                                 next3.type === 8) {
-                            name = next3.value;
+                            name = context.resolve(next3.value, this.map.id, true);
                             if (!this.modus.depsSet.hasOwnProperty(name)) {
                                 this.modus.deps.push(name);
                                 this.modus.depsSet[name] = true;
@@ -1000,14 +989,8 @@ var Loader, System, modus;
                                 next3.value === '()' && next3.inner.length === 1) {
                             current = next3.inner[0].token;
 
-                            //Mark that a dynamic import was done, restricts static import use.
-                            this.modus.checks.dynamicImport = true;
-                            if (this.modus.checks.staticImport) {
-                                throw new Error('"' + this.map.id + '": static and dynamic import not allowed');
-                            }
-
                             if (current.type === 8) {
-                                name = current.value;
+                                name = context.resolve(current.value, this.map.id, true);
                                 if (!this.modus.depsSet.hasOwnProperty(name)) {
                                     this.modus.deps.push(name);
                                     this.modus.depsSet[name] = true;
@@ -1278,9 +1261,31 @@ var Loader, System, modus;
                 }
 
                 //Expand the macros and collect them for use by other modules.
-                var flattened, ast, finalText,
-                    expanded = sweet.expander.expand(this.modus.readTree, this.modus.importMacros),
-                    foundMacros = sweet.expander.foundMacros;
+                var flattened, ast, finalText, expanded, foundMacros,
+                    removeIndices = [];
+
+                //Grab any static macros from dependencies.
+                eachProp(this.modus.staticImports, bind(this, function (depId, importName) {
+                    var depModule = registry[depId],
+                        macro = depModule.modus.macros[importName];
+
+                    if (macro) {
+                        this.modus.importMacros[importName] = macro;
+                        removeIndices.push(this.modus.maybeStaticImportIndex[importName]);
+
+                        //Mark a truly static form
+                    }
+                }));
+
+                //Clean up readTree to remove imports for macros, since they
+                //will not be removed correctly with the import keyword in there.
+                removeIndices.sort();
+                eachReverse(removeIndices, bind(this, function (index) {
+                    this.modus.readTree.splice(index, 4);
+                }));
+
+                expanded = sweet.expander.expand(this.modus.readTree, this.modus.importMacros);
+                foundMacros = sweet.expander.foundMacros;
 
                 //For any export of a macro, attach the macro definition to it.
                 eachProp(this.modus.macros, bind(this, function (value, prop) {
