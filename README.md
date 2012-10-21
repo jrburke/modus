@@ -106,7 +106,7 @@ of concept of the static forms mixing with dynamic values.
         export var name = 'b';
     }
 
-This shold be possible, just need to work out the AST transforms. `module {}`
+This should be possible, just need to work out the AST transforms. `module {}`
 scope will be treated the same as `function () {}` scope.
 
 ## TODO

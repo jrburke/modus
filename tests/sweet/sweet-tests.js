@@ -1,6 +1,6 @@
 /*jslint sloppy: true */
-/*global requirejs, doh, XMLHttpRequest, console */
-var sweet = requirejs.sweet,
+/*global modus, doh, XMLHttpRequest, console */
+var sweet = modus.sweet,
     lineEndRegExp = /[\r\n]\s*/g;
 
 function stripLines(text) {

@@ -4,21 +4,21 @@
 
 var fs = require('fs'),
     path = require('path'),
-    r = fs.readFileSync(path.join(__dirname, 'require.js'), 'utf8'),
-    e = fs.readFileSync(path.join(__dirname, 'esprima.js'), 'utf8'),
     m = fs.readFileSync(path.join(__dirname, 'm.js'), 'utf8'),
     sweet = fs.readFileSync(path.join(__dirname, 'sweet.js'), 'utf8'),
+    esprima = fs.readFileSync(path.join(__dirname, 'esprima.js'), 'utf8'),
     combined = '',
-    insertIndex = r.indexOf('function isFunction(it) {');
+    sweetMarker = '//INSERT SWEET HERE',
+    esprimaMarker = '//INSERT ESPRIMA HERE',
+    esprimaIndex = m.indexOf(esprimaMarker),
+    sweetIndex = m.indexOf(sweetMarker);
 
-//Brittle: insert esprima after first set of require local variables.
-combined = r.substring(0, insertIndex) +
-           e + '\n' + sweet +
-           r.substring(insertIndex, r.length);
+combined = m.substring(0, sweetIndex + sweetMarker.length) +
+           '\n' + sweet +
+           m.substring(sweetIndex + sweetMarker.length, m.length);
 
-//Brittle: looking for something after the initial requirejs.load
-//definition, but before any data-main or config-based loading is done.
-combined = combined.replace(/function\s*getInteractiveScript\s*\(\s*\)\s*\{/, m + '\n$&') +
-           '\nvar modus = requirejs;';
+combined = combined.substring(0, esprimaIndex + esprimaMarker.length) +
+           '\n' + esprima +
+           combined.substring(esprimaIndex + esprimaMarker.length, combined.length);
 
 fs.writeFileSync(path.join(__dirname, '..', 'modus.js'), combined, 'utf8');
