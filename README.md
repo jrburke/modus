@@ -30,6 +30,8 @@ separator, followed by a resource ID that the plugin handles:
 To import a statically known export:
 
     import y from 'a';
+
+    //The next one is not support yet, but is possible to do
     import { name: localGammaName } from 'gamma';
 
 To statically indicate an export property:
@@ -73,24 +75,63 @@ then a loader plugin could be used to load those scripts.
 
 ## 'Global' API
 
-`System.load()` is used to kick off top level module loading. Right now it is
-just an alias to the RequireJS `require([], function () {})` API, but it can be
-adapted to another form. It seemed that allowing multiple modules to load from
-a single load call, since that API is the only API to do a top-level script
-load. Maybe that is just meant to look like
-`System.load('a', 'b', function (a, b) {})`.
+`System.load()` is used to kick off top level module loading, but it uses
+an array for the first arg, to allow multiple IDs to be loaded in one call.
+Multiple IDs loaded in one call are useful since the only top level loading can
+be through this method call. It may be though that the preferred form will look
+more like `System.load('a', 'b', function (a, b) {})`.
 
 ## How does it work?
 
-RequireJS is used under the covers, but instead of loading scripts via a script
-tags, it uses XMLHttpRequest (XHR) calls to load the text, then the text is
-parsed via esprima.js to find the module APIs, and they are converted to
-requirejs APIs.
+Scripts are fetched via XMLHttpRequest (XHR) calls. The text is then converted
+to a stream of tokens using a
+[modified version](https://github.com/jrburke/sweet.js) of the
+[sweet.js](https://github.com/mozilla/sweet.js) reader, so it is not a fully
+lexed JS token stream. This allows analyzing the contents for forms that may not
+be valid JS.
 
-This is just a start, to get a feel for the surface syntax, but the approach
-will be changed more over time as the TODO items are done. In particular, the
-goal is to simulate injecting static exports before execution, to do a proof
-of concept of the static forms mixing with dynamic values.
+Static import and export constructs are pulled out of the read stream, as well
+as the dynamic API calls mentioned above. That information is used to fetch
+dependencies. Once the dependencies have been fetched and passed through the
+read stream, a static pass is used to import macros from other files and to
+collect the macros from the module that have been exported.
+
+Once the static pass is done with any macros inserted, then a runtime pass is
+done, converting any remaining static `import`, `export` and `module` use to
+runtime equivalents so the result is string of ES5-compatible JS. That JS is
+then executed.
+
+The internals of module tracking and execution is lifted from
+[requirejs](http://requirejs.org), but modified to only do XHR loading and to
+use sweetjs and esprima for a static phase in module processing.
+
+The module execution though fits how most AMD loaders work: fetch and execute
+dependencies before executing the current module, with the module API at runtime
+just getting the cached value for the dependencies. Also, allow for registering
+modules but not tracing dependencies and doing the static changes and execution
+until the module is part of a dependency chain that is triggered from a top
+level load call.
+
+## What? Macros in JavaScript?
+
+This project used macros as the static form to process because it was something
+that had a concrete implementation, and the reader concept from the sweetjs
+project is really neat. However, use of macros in this project does not mean that
+macros are definitely coming to JavaScript, and if they do, they may look
+differently than what is provided here. It is just to prove out doing static
+work before dropping the code down into dynamic calls and dynamic module values.
+
+The goal is to really show the kinds of static module work that can be done in
+a way that still allows for a dynamic module API that would allow "single value"
+exports and allowing "legacy JavaScript" to opt in to being used as an ES module
+by calling a dynamic, runtime API.
+
+All that said, sweetjs is pretty sweet, and it is really cool that they may
+have figured out a way to construct
+[a reader](http://calculist.org/blog/2012/04/17/homoiconicity-isnt-the-point/)
+for JS. The reader may have some use even outside of macros, and there could be
+JS use cases that really benefit from macros, in particular lighter "transpilers"
+that keep the curlies of JS, but have other interesting features.
 
 ## Unsupported syntax
 
@@ -108,6 +149,9 @@ of concept of the static forms mixing with dynamic values.
 
 This should be possible, just need to work out the AST transforms. `module {}`
 scope will be treated the same as `function () {}` scope.
+
+2. No `import *`. It seems like it is on its way out. It could be supported
+in the future, but only for static exports from a dependency.
 
 ## TODO
 
