@@ -350,7 +350,7 @@ var Loader, System, modus;
                     throw new Error('Invalid export: ' + token.value +
                                         ' ' + next.value + ' ' + tokens[i + 2]);
                 }
-            } else if (token.value === 'module') {
+            } else if (token.value === 'module' && next.type !== 'Punctuator') {
                 // MODULE
                 // module Bar = "bar.js";
                 replacement = 'var ';
@@ -1057,8 +1057,14 @@ var Loader, System, modus;
                 }
             },
 
+            //Give the raw text for this module, and use it to start
+            //static analysis.
             textFetched: function (text) {
-                //Raw text for the module.
+                //Set fetched here to true, some cases do not need a
+                //fetch, like a loader plugin transpiler -- it will
+                //have already fetched the value.
+                this.fetched = true;
+
                 this.modus.readTree = sweet.parser.read(text);
 
                 this.extractImports();
@@ -1169,6 +1175,10 @@ var Loader, System, modus;
             },
 
             enable: function () {
+                if (this.enabled) {
+                    return;
+                }
+
                 this.enabled = true;
 
                 //Set flag mentioning that the module is enabling,
@@ -1463,7 +1473,7 @@ var Loader, System, modus;
                     var load, normalizedMap, normalizedMod,
                         name = this.map.name,
                         parentName = this.map.parentMap ? this.map.parentMap.name : null,
-                        localRequire = context.makeRequire(map.parentMap, {
+                        localSystem = makeLocalSystem(map.parentMap, {
                             enableBuildCallback: true,
                             skipMap: true
                         });
@@ -1534,7 +1544,8 @@ var Loader, System, modus;
                     load.fromText = bind(this, function (text, textAlt) {
                         /*jslint evil: true */
                         var moduleName = map.name,
-                            moduleMap = makeModuleMap(moduleName);
+                            moduleMap = makeModuleMap(moduleName),
+                            module = getModule(moduleMap);
 
                         //As of 2.1.0, support just passing the text, to reinforce
                         //fromText only being called once per resource. Still
@@ -1544,34 +1555,26 @@ var Loader, System, modus;
                             text = textAlt;
                         }
 
-                        //Prime the system by creating a module instance for
-                        //it.
-                        getModule(moduleMap);
+                        //Mark this as a dependency for the plugin
+                        //resource
+                        this.depMaps.push(moduleMap);
 
                         try {
-                            //This should allow for the static analysis and such.
-                            TODO.exec(text);
+                            module.textFetched(text);
                         } catch (e) {
                             throw new Error('fromText eval for ' + moduleName +
                                             ' failed: ' + e);
                         }
 
-                        //Mark this as a dependency for the plugin
-                        //resource
-                        this.depMaps.push(moduleMap);
-
-                        //Support anonymous modules.
-                        context.completeLoad(moduleName);
-
                         //Bind the value of that module to the value for this
                         //resource ID.
-                        localRequire([moduleName], load);
+                        localSystem.load([moduleName], load);
                     });
 
                     //Use parentName here since the plugin's name is not reliable,
                     //could be some weird string with no path that actually wants to
                     //reference the parentName's path.
-                    plugin.load(map.name, localRequire, load, config);
+                    plugin.load(map.name, localSystem, load, config);
                 }));
 
                 enable(pluginMap, this);

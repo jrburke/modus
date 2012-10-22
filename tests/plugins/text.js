@@ -137,7 +137,7 @@ text = {
         onLoad(content);
     },
 
-    load: function (name, req, onLoad, config) {
+    load: function (name, System, onLoad, config) {
         //Name has format: some.module.filext!strip
         //The strip part is optional.
         //if strip is present, then that means only get the string contents
@@ -156,7 +156,7 @@ text = {
 
         var parsed = text.parseName(name),
             nonStripName = parsed.moduleName + '.' + parsed.ext,
-            url = req.toUrl(nonStripName),
+            url = System.toUrl(nonStripName),
             useXhr = (masterConfig.useXhr) ||
                      text.useXhr;
 
@@ -174,7 +174,7 @@ text = {
             //the resource has been optimized into a JS module. Fetch
             //by the module name + extension, but do not include the
             //!strip part to avoid file system issues.
-            req([nonStripName], function (content) {
+            System.load([nonStripName], function (content) {
                 text.finishLoad(parsed.moduleName + '.' + parsed.ext,
                                 parsed.strip, content, onLoad);
             });

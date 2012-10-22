@@ -6,12 +6,12 @@
 
 /*jslint */
 /*global define, window, XMLHttpRequest, importScripts, Packages, java,
-  ActiveXObject, process, require */
+  ActiveXObject, process, System, require */
 
 
 'use strict';
 var fs, getXhr,
-    CoffeeScript = System.get('cofee-script'),
+    CoffeeScript = System.get('coffee-script'),
     progIds = ['Msxml2.XMLHTTP', 'Microsoft.XMLHTTP', 'Msxml2.XMLHTTP.4.0'],
     fetchText = function () {
         throw new Error('Environment unsupported.');
@@ -121,8 +121,8 @@ System.set({
 
     version: '0.4.2',
 
-    load: function (name, parentRequire, load, config) {
-        var path = parentRequire.toUrl(name + '.coffee');
+    load: function (name, System, load, config) {
+        var path = System.toUrl(name + '.coffee');
         fetchText(path, function (text) {
 
             //Do CoffeeScript transform.
@@ -148,13 +148,6 @@ System.set({
             /*@end@*/
 
             load.fromText(name, text);
-
-            //Give result to load. Need to wait until the module
-            //is fully parse, which will happen after this
-            //execution.
-            parentRequire([name], function (value) {
-                load(value);
-            });
         });
     }
 });
