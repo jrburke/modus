@@ -599,14 +599,11 @@ var Loader, System, modus;
                 mod = registry[id];
 
             if (hasProp(defined, id) &&
-                    (!mod || mod.defineEmitComplete)) {
-                if (name === 'defined') {
-                    fn(defined[id]);
-                }
-            } else if (hasProp(registry, id) && mod && name === 'staticDone') {
-                if (mod.staticDone) {
-                    fn(mod);
-                }
+                    (!mod || mod.defineEmitComplete) && name === 'defined') {
+                fn(defined[id]);
+            } else if (hasProp(registry, id) && mod && name === 'staticDone'
+                    && mod.staticDone) {
+                fn(mod);
             } else {
                 getModule(depMap).on(name, fn);
             }
@@ -930,6 +927,18 @@ var Loader, System, modus;
                 checks: {}
             };
 
+            //If this is not a function declaration, just a dynamic
+            //load, then no need to register static work.
+            if (!this.map.isDefine) {
+                this.registered = true;
+            }
+
+            //If this is an unnormalized ID, skip the "exec" phase since
+            //it is just a passthrough, temporary proxy for the real loader
+            //plugin resource.
+            if (this.map.isDefine && this.map.unnormalized) {
+                this.skipExec = true;
+            }
         };
 
         Module.prototype = {
@@ -1286,7 +1295,7 @@ var Loader, System, modus;
             },
 
             staticCheck: function () {
-                if (!this.enabled || this.staticDepCount > 0) {
+                if (!this.enabled || this.staticDepCount > 0 || this.staticDone) {
                     return;
                 }
 
@@ -1341,6 +1350,10 @@ var Loader, System, modus;
             },
 
             exec: function () {
+                if (this.skipExec) {
+                    return;
+                }
+
                 //If a factory already, a loader.load() call, skip to the
                 //next step.
                 if (this.factory) {
@@ -1381,7 +1394,9 @@ var Loader, System, modus;
              * define it.
              */
             check: function () {
-                if (!this.enabled || this.enabling) {
+                if (!this.enabled || this.enabling ||
+                        //Already did the work, skip.
+                        (this.defined && this.defineEmitted)) {
                     return;
                 }
 
@@ -1409,23 +1424,22 @@ var Loader, System, modus;
                     //of doing that, skip this work.
                     this.defining = true;
 
-                    System = makeLocalSystem(this.map);
-
-                    if (this.map.isDefine) {
-                        System.set = (bind(this, function (value) {
-                            this.module.exports = value;
-                        }));
-                        System.exports = exports;
-                        System.module = this.module;
-
-                        args.push(System);
-                    } else {
-                        args = this.depMaps.map(function (depMap) {
-                            return System.get(depMap.id);
-                        });
-                    }
-
                     if (this.depCount < 1 && !this.defined) {
+                        System = makeLocalSystem(this.map);
+                        if (this.map.isDefine) {
+                            System.set = (bind(this, function (value) {
+                                this.module.exports = value;
+                            }));
+                            System.exports = exports;
+                            System.module = this.module;
+
+                            args.push(System);
+                        } else {
+                            args = this.depMaps.map(function (depMap) {
+                                return System.get(depMap.id);
+                            });
+                        }
+
                         if (isFunction(factory)) {
                             //If there is an error listener, favor passing
                             //to that instead of throwing an error.
@@ -1465,10 +1479,9 @@ var Loader, System, modus;
                         }
 
                         this.exports = exports;
+                        defined[id] = exports;
 
                         if (this.map.isDefine && !this.ignore) {
-                            defined[id] = exports;
-
                             if (context.onResourceLoad) {
                                 context.onResourceLoad(context, this.map, this.depMaps);
                             }
@@ -1524,35 +1537,20 @@ var Loader, System, modus;
                         //for applying map config again either.
                         normalizedMap = makeModuleMap(map.prefix + '@' + name,
                                                       this.map.parentMap);
-                        on(normalizedMap,
-                            'defined', bind(this, function (value) {
-                                this.init([], function () { return value; }, null, {
-                                    enabled: true,
-                                    ignore: true
-                                });
-                            }));
 
-                        normalizedMod = registry[normalizedMap.id];
-                        if (normalizedMod) {
-                            //Mark this as a dependency for this plugin, so it
-                            //can be traced for cycles.
-                            this.depMaps.push(normalizedMap);
-
-                            if (this.events.error) {
-                                normalizedMod.on('error', bind(this, function (err) {
-                                    this.emit('error', err);
-                                }));
-                            }
-                            normalizedMod.enable();
-                        }
-
-                        return;
+                        this.init([normalizedMap.id], function (System) {
+                            return System.set(System.get(normalizedMap.id));
+                        }, null, {
+                            enabled: true,
+                            ignore: true
+                        });
                     }
 
                     load = bind(this, function (value) {
                         this.init([], function (System) { System.set(value); }, null, {
                             enabled: true
                         });
+                        this.staticCheck();
                         this.register();
                     });
 
@@ -1594,6 +1592,8 @@ var Loader, System, modus;
 
                         try {
                             module.textFetched(text);
+                            module.enable();
+                            module.staticCheck();
                         } catch (e) {
                             throw new Error('fromText eval for ' + moduleName +
                                             ' failed: ' + e);

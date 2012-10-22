@@ -148,3 +148,17 @@ the exports value for the module, and using `a.y` later works.
 The doku wiki just seems to allow ExportSpecifierSet, VariableDeclaration,
 FunctionDeclaration, ModuleDeclaration. Need to figure the exact extent of
 those values, but the names imply it is not.
+
+3) Transpiler loader plugins take up two names: 'cs@widget/util' ends up
+defining a pure JS module 'widget/util', at least in source load form. Does
+that cause problems for someone wanting to define a real widget/util.js on
+disk? This has not come up in requirejs-land, usually if a transpiler is
+involved, the use case does not overlap -- the developer wants to be in all
+transpiler mode. Is this an implementation quirk or a restriction of the module
+ID namespacing?
+
+4) Skip static work for System.load() calls, in Module.init? Does that dichotomy
+have larger implications either on implementation or conceptual understanding?
+Probably just harmless implementation detail.
+
+
