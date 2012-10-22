@@ -941,7 +941,11 @@ var Loader, System, modus;
 
                 for (i = 0; i < readTree.length; i += 1) {
                     token = readTree[i].token;
-                    if (token.type === 4 && token.value === 'import') {
+                    //Track macro use, if no macros, then possibly skip expensive
+                    //macro expansion later.
+                    if (token.type === 3 && token.value === 'macro') {
+                        this.hasMacro = true;
+                    } else if (token.type === 4 && token.value === 'import') {
                         //Look ahead
                         next = readTree[i + 1].token;
                         next2 = readTree[i + 2].token;
@@ -957,6 +961,7 @@ var Loader, System, modus;
                             }
 
                             this.modus.staticImports[name] = moduleId;
+                            this.hasStaticImport = true;
 
                             //Remember import location because if a macro ref,
                             //will need to remove it later for the transform
@@ -1065,6 +1070,7 @@ var Loader, System, modus;
                 //have already fetched the value.
                 this.fetched = true;
 
+                this.modus.text = text;
                 this.modus.readTree = sweet.parser.read(text);
 
                 this.extractImports();
@@ -1119,6 +1125,11 @@ var Loader, System, modus;
                     //Enable this module and dependencies.
                     //Will call this.check()
                     this.enable();
+
+                    //Call dependency enabling, since when loading from
+                    //network, this module has been enabled, but dependencies
+                    //were not known. Now they are known, so enable.
+                    this.enableDeps();
                 } else {
                     this.check();
                 }
@@ -1187,67 +1198,79 @@ var Loader, System, modus;
                 //with the depCount still being zero.
                 this.enabling = true;
 
-                //Enable each dependency
-                each(this.depMaps, bind(this, function (depMap, i) {
-                    var id, mod, handler;
-
-                    if (typeof depMap === 'string') {
-                        //Dependency needs to be converted to a depMap
-                        //and wired up to this module.
-                        depMap = makeModuleMap(depMap,
-                                               (this.map.isDefine ? this.map : this.map.parentMap),
-                                               false,
-                                               !this.skipMap);
-                        this.depMaps[i] = depMap;
-
-                        handler = handlers[depMap.id];
-
-                        if (handler) {
-                            this.depExports[i] = handler(this);
-                            return;
-                        }
-
-                        this.depCount += 1;
-                        this.staticDepCount += 1;
-
-                        //Once static step on dependency is done, note it here.
-                        on(depMap, 'staticDone', bind(this, function (depModule) {
-                            this.staticDepDone(i, depModule);
-                        }));
-
-                        on(depMap, 'defined', bind(this, function (depExports) {
-                            this.defineDep(i, depExports);
-                            this.check();
-                        }));
-
-                        if (this.errback) {
-                            on(depMap, 'error', this.errback);
-                        }
-                    }
-
-                    id = depMap.id;
-                    mod = registry[id];
-
-                    //Skip special modules like 'require', 'exports', 'module'
-                    //Also, don't call enable if it is already enabled,
-                    //important in circular dependency cases.
-                    if (!handlers[id] && mod && !mod.enabled) {
-                        enable(depMap, this);
-                    }
-                }));
-
-                //Enable each plugin that is used in
-                //a dependency
-                eachProp(this.pluginMaps, bind(this, function (pluginMap) {
-                    var mod = registry[pluginMap.id];
-                    if (mod && !mod.enabled) {
-                        enable(pluginMap, this);
-                    }
-                }));
+                this.enableDeps();
 
                 this.enabling = false;
 
                 this.check();
+            },
+
+            enableDeps: function () {
+                if (this.enabled && !this.enabledDeps) {
+                    //Set a state flag, just to avoid extra looping
+                    //when not needed.
+                    if (this.depMaps.length) {
+                        this.enabledDeps = true;
+                    }
+
+                    //Enable each dependency
+                    each(this.depMaps, bind(this, function (depMap, i) {
+                        var id, mod, handler;
+
+                        if (typeof depMap === 'string') {
+                            //Dependency needs to be converted to a depMap
+                            //and wired up to this module.
+                            depMap = makeModuleMap(depMap,
+                                                   (this.map.isDefine ? this.map : this.map.parentMap),
+                                                   false,
+                                                   !this.skipMap);
+                            this.depMaps[i] = depMap;
+
+                            handler = handlers[depMap.id];
+
+                            if (handler) {
+                                this.depExports[i] = handler(this);
+                                return;
+                            }
+
+                            this.depCount += 1;
+                            this.staticDepCount += 1;
+
+                            //Once static step on dependency is done, note it here.
+                            on(depMap, 'staticDone', bind(this, function (depModule) {
+                                this.staticDepDone(i, depModule);
+                            }));
+
+                            on(depMap, 'defined', bind(this, function (depExports) {
+                                this.defineDep(i, depExports);
+                                this.check();
+                            }));
+
+                            if (this.errback) {
+                                on(depMap, 'error', this.errback);
+                            }
+                        }
+
+                        id = depMap.id;
+                        mod = registry[id];
+
+                        //Skip special modules like 'require', 'exports', 'module'
+                        //Also, don't call enable if it is already enabled,
+                        //important in circular dependency cases.
+                        if (!handlers[id] && mod && !mod.enabled) {
+                            enable(depMap, this);
+                        }
+                    }));
+
+                    //Enable each plugin that is used in
+                    //a dependency
+                    eachProp(this.pluginMaps, bind(this, function (pluginMap) {
+                        var mod = registry[pluginMap.id];
+                        if (mod && !mod.enabled) {
+                            enable(pluginMap, this);
+                        }
+                    }));
+                }
             },
 
             staticDepDone: function (i, depModule) {
@@ -1271,40 +1294,46 @@ var Loader, System, modus;
                 var flattened, ast, finalText, expanded, foundMacros,
                     removeIndices = [];
 
-                //Grab any static macros from dependencies.
-                eachProp(this.modus.staticImports, bind(this, function (depId, importName) {
-                    var depModule = registry[depId],
-                        macro = depModule.modus.macros[importName];
+                //Only do static work if it looks like there is work to do.
+                //This helps performance, and at least when trying to run
+                //coffee-script.js through macro expansion, avoid the pit of no
+                //return.
+                if (this.hasMacro || this.hasStaticImport) {
+                    //Grab any static macros from dependencies.
+                    eachProp(this.modus.staticImports, bind(this, function (depId, importName) {
+                        var depModule = registry[depId],
+                            macro = depModule.modus.macros[importName];
 
-                    if (macro) {
-                        this.modus.importMacros[importName] = macro;
-                        removeIndices.push(this.modus.maybeStaticImportIndex[importName]);
+                        if (macro) {
+                            this.modus.importMacros[importName] = macro;
+                            removeIndices.push(this.modus.maybeStaticImportIndex[importName]);
 
-                        //Mark a truly static form
-                    }
-                }));
+                            //Mark a truly static form
+                        }
+                    }));
 
-                //Clean up readTree to remove imports for macros, since they
-                //will not be removed correctly with the import keyword in there.
-                removeIndices.sort();
-                eachReverse(removeIndices, bind(this, function (index) {
-                    this.modus.readTree.splice(index, 4);
-                }));
+                    //Clean up readTree to remove imports for macros, since they
+                    //will not be removed correctly with the import keyword in there.
+                    removeIndices.sort();
+                    eachReverse(removeIndices, bind(this, function (index) {
+                        this.modus.readTree.splice(index, 4);
+                    }));
 
-                expanded = sweet.expander.expand(this.modus.readTree, this.modus.importMacros);
-                foundMacros = sweet.expander.foundMacros;
+                    expanded = sweet.expander.expand(this.modus.readTree, this.modus.importMacros);
+                    foundMacros = sweet.expander.foundMacros;
 
-                //For any export of a macro, attach the macro definition to it.
-                eachProp(this.modus.macros, bind(this, function (value, prop) {
-                    this.modus.macros[prop] = foundMacros[prop];
-                }));
+                    //For any export of a macro, attach the macro definition to it.
+                    eachProp(this.modus.macros, bind(this, function (value, prop) {
+                        this.modus.macros[prop] = foundMacros[prop];
+                    }));
 
-                //Expand macros to end up with final module text.
-                flattened = sweet.expander.flatten(expanded);
-                ast = sweet.parser.parse(flattened);
-                finalText = sweet.escodegen.generate(ast);
+                    //Expand macros to end up with final module text.
+                    flattened = sweet.expander.flatten(expanded);
+                    ast = sweet.parser.parse(flattened);
+                    finalText = sweet.escodegen.generate(ast);
 
-                this.modus.text = finalText;
+                    this.modus.text = finalText;
+                }
 
                 this.staticDone = true;
                 this.emit('staticDone', this);
@@ -1339,7 +1368,10 @@ var Loader, System, modus;
             },
 
             register: function (factory) {
-                this.factory = factory;
+                if (factory) {
+                    this.factory = factory;
+
+                }
                 this.registered = true;
                 this.check();
             },
@@ -1518,9 +1550,10 @@ var Loader, System, modus;
                     }
 
                     load = bind(this, function (value) {
-                        this.init([], function () { return value; }, null, {
+                        this.init([], function (System) { System.set(value); }, null, {
                             enabled: true
                         });
+                        this.register();
                     });
 
                     load.error = bind(this, function (err) {
