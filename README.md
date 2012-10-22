@@ -112,6 +112,16 @@ modules but not tracing dependencies and doing the static changes and execution
 until the module is part of a dependency chain that is triggered from a top
 level load call.
 
+## How to use it
+
+`modus.js` is the script to use. See the tests on how it is put in a page.
+
+`modus.js` is constructed by using some files in the `tools` directory. The
+`tools/m.js` file is the main implementation. The `tools/build-modus.js` build
+script injects the modified sweetjs and esprima into m.js and saves that output
+as modus.js. If you want to do modifications to modus, change m.js, then generate
+modus.js via the build script to get an updated file.
+
 ## What? Macros in JavaScript?
 
 This project used macros as the static form to process because it was something
@@ -130,8 +140,8 @@ All that said, sweetjs is pretty sweet, and it is really cool that they may
 have figured out a way to construct
 [a reader](http://calculist.org/blog/2012/04/17/homoiconicity-isnt-the-point/)
 for JS. The reader may have some use even outside of macros, and there could be
-JS use cases that really benefit from macros, in particular lighter "transpilers"
-that keep the curlies of JS, but have other interesting features.
+JS use cases that really benefit from macros, in particular language variants
+that are lighter than full transpilers.
 
 ## Unsupported syntax
 
