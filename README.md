@@ -14,6 +14,10 @@ dependency references and module definitions, and a way for modules that are
 all developed separately to all refer to the same exterior module with the
 same module ID.
 
+The output of this experiment is to generate a modus.js that could be used to
+try out the module syntax and behavior in any ES5-compatible browser, possibly
+even ES3. The collection of tests may be useful over the long term.
+
 ## Supported syntax
 
 ### Static API
