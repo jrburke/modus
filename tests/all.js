@@ -8,3 +8,4 @@ doh.registerUrl("macro", "../macro/macro.html");
 doh.registerUrl("macroImport", "../macro/import/macroImport.html");
 
 doh.registerUrl("plugins", "../plugins/plugins.html");
+doh.registerUrl("pluginsResolve", "../plugins/resolve/resolve.html");

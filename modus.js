@@ -538,7 +538,7 @@ var Loader, System, modus;
             //Account for relative paths if there is a base name.
             if (name) {
                 if (prefix) {
-                    if (pluginModule && pluginModule.normalize) {
+                    if (pluginModule && pluginModule.resolve) {
                         //Plugin is loaded, use its normalize method.
                         normalizedName = pluginModule.resolve(name, function (name) {
                             return context.resolve(name, parentName, applyMap);
@@ -946,7 +946,7 @@ var Loader, System, modus;
             extractImports: function (readTree) {
                 var i, token, next, next2, next3, name, current,
                     macros, moduleId,
-                    topLevel = !!readTree;
+                    topLevel = !readTree;
 
                 if (!readTree) {
                     //Top level, start with top of readTree
@@ -1095,7 +1095,7 @@ var Loader, System, modus;
 
             //Give the raw text for this module, and use it to start
             //static analysis.
-            textFetched: function (text) {
+            textFetched: function (text, callback) {
                 //Set fetched here to true, some cases do not need a
                 //fetch, like a loader plugin transpiler -- it will
                 //have already fetched the value.
@@ -1107,8 +1107,36 @@ var Loader, System, modus;
                 this.extractImports();
                 this.extractExports();
 
-                this.init(this.modus.deps);
-                this.staticCheck();
+                //If any of the deps are for plugin resources, need to be sure
+                //the plugin is loaded first before doing the next step,
+                //so that the plugin resource IDs get properly resolved.
+                //May be a way to optimize the number of checks here.
+                var pluginDeps = [],
+                    pluginMap = {};
+                this.modus.deps.forEach(bind(this, function (depId) {
+                    var map = makeModuleMap(depId, this.map, false, true),
+                        prefix = map.prefix;
+
+                    if (prefix && !pluginMap[prefix]) {
+                        pluginDeps.push(prefix);
+                        pluginMap[prefix] = true;
+                    }
+                }));
+
+                //System.load with an empty array should just call the callback.
+                //Do this to avoid repeating code in an if/else branch, but
+                //a bit wasteful since makeModuleMap is called again.
+                System.load(pluginDeps, bind(this, function () {
+                    //Now that plugins are loaded, fully resolve the IDs.
+                    this.modus.deps = this.modus.deps.map(bind(this, function (depId) {
+                        return makeModuleMap(depId, this.map, false, true).id;
+                    }));
+                    this.init(this.modus.deps);
+                    this.staticCheck();
+                    if (callback) {
+                        callback();
+                    }
+                }));
             },
 
             init: function (depMaps, factory, errback, options) {
@@ -1601,18 +1629,14 @@ var Loader, System, modus;
                             //resource
                             this.depMaps.push(moduleMap);
 
-                            try {
-                                module.textFetched(text);
+                            module.textFetched(text, bind(this, function () {
                                 module.enable();
                                 module.staticCheck();
-                            } catch (e) {
-                                throw new Error('fromText eval for ' + moduleName +
-                                                ' failed: ' + e);
-                            }
 
-                            //Bind the value of that module to the value for this
-                            //resource ID.
-                            localSystem.load([moduleName], request.fulfill);
+                                //Bind the value of that module to the value for this
+                                //resource ID.
+                                localSystem.load([moduleName], request.fulfill);
+                            }));
                         })
                     };
 

@@ -1,5 +1,3 @@
-System.set(function () {
-    return {
-        name: "bPrime"
-    };
+System.set({
+    name: "bPrime"
 });

@@ -1,5 +1,3 @@
-System.set(function () {
-    return {
-        name: "b"
-    };
+System.set({
+    name: "b"
 });
