@@ -943,18 +943,35 @@ var Loader, System, modus;
 
         Module.prototype = {
 
-            extractImports: function () {
+            extractImports: function (readTree) {
                 var i, token, next, next2, next3, name, current,
                     macros, moduleId,
+                    topLevel = !!readTree;
+
+                if (!readTree) {
+                    //Top level, start with top of readTree
                     readTree = this.modus.readTree;
+                }
 
                 for (i = 0; i < readTree.length; i += 1) {
                     token = readTree[i].token;
-                    //Track macro use, if no macros, then possibly skip expensive
-                    //macro expansion later.
-                    if (token.type === 3 && token.value === 'macro') {
+                    if (token.inner) {
+                        //Nested tree, parse it.
+                        this.extractImports(token.inner);
+                    } else if (token.type === 3 && token.value === 'macro') {
+                        if (!topLevel) {
+                            //Only allow macro at top level
+                            throw new Error(this.map.id + ': macro statements must be top level');
+                        }
+                       //Track macro use, if no macros, then possibly skip expensive
+                        //macro expansion later.
                         this.hasMacro = true;
                     } else if (token.type === 4 && token.value === 'import') {
+                        if (!topLevel) {
+                            //Only allow imports at top level
+                            throw new Error(this.map.id + ': import statements must be top level');
+                        }
+
                         //Look ahead
                         next = readTree[i + 1].token;
                         next2 = readTree[i + 2].token;
@@ -985,6 +1002,11 @@ var Loader, System, modus;
                         if (next.type === 3 &&
                                 next2.type === 4 && next2.value === 'from' &&
                                 next3.type === 8) {
+                            if (!topLevel) {
+                                //Only allow module at top level
+                                throw new Error(this.map.id + ': module statements must be top level');
+                            }
+
                             name = context.resolve(next3.value, this.map.id, true);
                             if (!this.modus.depsSet.hasOwnProperty(name)) {
                                 this.modus.deps.push(name);
@@ -1515,7 +1537,7 @@ var Loader, System, modus;
                 this.depMaps.push(pluginMap);
 
                 on(pluginMap, 'defined', bind(this, function (plugin) {
-                    var load, normalizedMap, normalizedMod,
+                    var request, normalizedMap, normalizedMod,
                         name = this.map.name,
                         parentName = this.map.parentMap ? this.map.parentMap.name : null,
                         localSystem = makeLocalSystem(map.parentMap, {
@@ -1527,8 +1549,8 @@ var Loader, System, modus;
                     //normalized name to load instead of continuing.
                     if (this.map.unnormalized) {
                         //Normalize the ID if the plugin allows it.
-                        if (plugin.normalize) {
-                            name = plugin.normalize(name, function (name) {
+                        if (plugin.resolve) {
+                            name = plugin.resolve(name, function (name) {
                                 return context.resolve(name, parentName, true);
                             }) || '';
                         }
@@ -1546,68 +1568,58 @@ var Loader, System, modus;
                         });
                     }
 
-                    load = bind(this, function (value) {
-                        this.init([], function (System) { System.set(value); }, null, {
-                            enabled: true
-                        });
-                        this.staticCheck();
-                        this.register();
-                    });
+                    request = {
+                        fulfill: bind(this, function (value) {
+                            this.init([], function (System) { System.set(value); }, null, {
+                                enabled: true
+                            });
+                            this.staticCheck();
+                            this.register();
+                        }),
+                        error: bind(this, function (err) {
+                            this.inited = true;
+                            this.error = err;
+                            err.requireModules = [id];
 
-                    load.error = bind(this, function (err) {
-                        this.inited = true;
-                        this.error = err;
-                        err.requireModules = [id];
+                            //Remove temp unnormalized modules for this module,
+                            //since they will never be resolved otherwise now.
+                            eachProp(registry, function (mod) {
+                                if (mod.map.id.indexOf(id + '_unnormalized') === 0) {
+                                    cleanRegistry(mod.map.id);
+                                }
+                            });
 
-                        //Remove temp unnormalized modules for this module,
-                        //since they will never be resolved otherwise now.
-                        eachProp(registry, function (mod) {
-                            if (mod.map.id.indexOf(id + '_unnormalized') === 0) {
-                                cleanRegistry(mod.map.id);
+                            onError(err);
+                        }),
+                        exec: bind(this, function (text) {
+                            /*jslint evil: true */
+                            var moduleName = map.name,
+                                moduleMap = makeModuleMap(moduleName),
+                                module = getModule(moduleMap);
+
+                            //Mark this as a dependency for the plugin
+                            //resource
+                            this.depMaps.push(moduleMap);
+
+                            try {
+                                module.textFetched(text);
+                                module.enable();
+                                module.staticCheck();
+                            } catch (e) {
+                                throw new Error('fromText eval for ' + moduleName +
+                                                ' failed: ' + e);
                             }
-                        });
 
-                        onError(err);
-                    });
-
-                    //Allow plugins to load other code without having to know the
-                    //context or how to 'complete' the load.
-                    load.fromText = bind(this, function (text, textAlt) {
-                        /*jslint evil: true */
-                        var moduleName = map.name,
-                            moduleMap = makeModuleMap(moduleName),
-                            module = getModule(moduleMap);
-
-                        //As of 2.1.0, support just passing the text, to reinforce
-                        //fromText only being called once per resource. Still
-                        //support old style of passing moduleName but discard
-                        //that moduleName in favor of the internal ref.
-                        if (textAlt) {
-                            text = textAlt;
-                        }
-
-                        //Mark this as a dependency for the plugin
-                        //resource
-                        this.depMaps.push(moduleMap);
-
-                        try {
-                            module.textFetched(text);
-                            module.enable();
-                            module.staticCheck();
-                        } catch (e) {
-                            throw new Error('fromText eval for ' + moduleName +
-                                            ' failed: ' + e);
-                        }
-
-                        //Bind the value of that module to the value for this
-                        //resource ID.
-                        localSystem.load([moduleName], load);
-                    });
+                            //Bind the value of that module to the value for this
+                            //resource ID.
+                            localSystem.load([moduleName], request.fulfill);
+                        })
+                    };
 
                     //Use parentName here since the plugin's name is not reliable,
                     //could be some weird string with no path that actually wants to
                     //reference the parentName's path.
-                    plugin.load(map.name, localSystem, load, config);
+                    plugin.load(map.name, localSystem, request, config);
                 }));
 
                 enable(pluginMap, this);
@@ -1993,7 +2005,7 @@ var Loader, System, modus;
         }, this);
     };
 
-    System = new global.Loader();
+    System = new Loader();
 
     //Allow passing in a config as var modus = {}
     if (typeof modus !== 'undefined' && !modus.contexts) {

@@ -121,7 +121,7 @@ System.set({
 
     version: '0.4.2',
 
-    load: function (name, System, load, config) {
+    load: function (name, System, request, config) {
         var path = System.toUrl(name + '.coffee');
         fetchText(path, function (text) {
 
@@ -147,7 +147,7 @@ System.set({
             }
             /*@end@*/
 
-            load.fromText(name, text);
+            request.exec(text);
         });
     }
 });

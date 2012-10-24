@@ -137,7 +137,7 @@ text = {
         onLoad(content);
     },
 
-    load: function (name, System, onLoad, config) {
+    load: function (name, System, request, config) {
         //Name has format: some.module.filext!strip
         //The strip part is optional.
         //if strip is present, then that means only get the string contents
@@ -148,7 +148,7 @@ text = {
         // Do not bother with the work if a build and text will
         // not be inlined.
         if (config.isBuild && !config.inlineText) {
-            onLoad();
+            request.fulfill();
             return;
         }
 
@@ -163,12 +163,8 @@ text = {
         //Load the text. Use XHR if possible and in a browser.
         if (!hasLocation || useXhr(url, defaultProtocol, defaultHostName, defaultPort)) {
             text.get(url, function (content) {
-                text.finishLoad(name, parsed.strip, content, onLoad);
-            }, function (err) {
-                if (onLoad.error) {
-                    onLoad.error(err);
-                }
-            });
+                text.finishLoad(name, parsed.strip, content, request.fulfill);
+            }, request.reject);
         } else {
             //Need to fetch the resource across domains. Assume
             //the resource has been optimized into a JS module. Fetch
@@ -176,7 +172,7 @@ text = {
             //!strip part to avoid file system issues.
             System.load([nonStripName], function (content) {
                 text.finishLoad(parsed.moduleName + '.' + parsed.ext,
-                                parsed.strip, content, onLoad);
+                                parsed.strip, content, request.fulfill);
             });
         }
     },

@@ -85,6 +85,56 @@ Multiple IDs loaded in one call are useful since the only top level loading can
 be through this method call. It may be though that the preferred form will look
 more like `System.load('a', 'b', function (a, b) {})`.
 
+## Loader plugin API.
+
+Loader plugins are called called via module IDs like `'pluginId@resourceId'`.
+
+If the module at ID `pluginId` implements the following loader plugin API, it
+will be responsible for determining a value for the resource specified by
+`'pluginId@resourceId'`.
+
+API:
+
+### resolve: function (resourceId, resolve) [Optional]
+
+If the resourceId value is something that does not behave like a simple JS module
+ID, then the plugin can implement a resolve method that resolves the ID to an
+absolute ID usable by the loader for module value caching. The resolve method
+is passed the following arguments:
+
+* **resourceId**: String. the resourceId to resolve.
+* **resolve**: Function. A function that can be called to resolve a segment of
+the resourceId according to the loader's configuration.
+
+Example,
+
+### load: function (resourceId, System, request, config) {}
+
+Where the values passed to the plugin's fetch method are:
+
+* **resourceId**: String. The fully resolved, absolute resourceId. If the plugin
+implemented a resolve method, then this value will have already been resolved.
+* **System**: Object. A local System object that can be used to load modules. It
+has the same API as the top level System, with relative module IDs resolved
+relative to the module that specified this loader plugin ID.
+* **request**: Object. Has the following methods on it:
+    **fullfill**: Function. Call it and pass a value that is the value for the
+    resourceId.
+    **reject**: Function. Call it with an Error object if there was an error
+    in determining the value for the resourceId.
+    **exec**: Function. Call it with a string of JavaScript that represents
+    the module source for that resource ID. The JS string can use the normal
+    module API to declare dependencies and specify an export value.
+
+Typically transpiler plugins will use request.exec(string) where other types of
+plugins (feature detection plugins, text, css plugins) will use
+request.fulfill(value).
+* **config**: Object. Loader specific object that may have additional loader
+info. Most commonly used by build tools/concatenators to indicate to a plugin
+that it is running in "build mode" via config.isBuild === true.
+
+TODO: APIs for build tools, write, writeFile, pluginBuilder?
+
 ## How does it work?
 
 Scripts are fetched via XMLHttpRequest (XHR) calls. The text is then converted
