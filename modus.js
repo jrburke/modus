@@ -424,9 +424,7 @@ var Loader, System, modus;
         });
 
         return {
-            text: "System.define(function (System) {\n" +
-                  transformedText +
-                  '\n});',
+            text: transformedText,
             stars: stars
         };
     }
@@ -441,7 +439,7 @@ var Loader, System, modus;
     }
 
     function newContext(parent, options, context) {
-        var Module, inCheckLoaded, checkLoadedTimeoutId, handlers,
+        var Module, Script, inCheckLoaded, checkLoadedTimeoutId, handlers,
             contextName = generateContextName(options.name),
             config = {
                 waitSeconds: 7,
@@ -902,6 +900,58 @@ var Loader, System, modus;
             };
         }
 
+        Script = function (isStrict, moduleOwner) {
+            this.moduleOwner = moduleOwner;
+            this.isStrict = isStrict;
+            this.count = 0;
+            this.doneMap = {};
+            this.keys = [];
+            this.map = {};
+        };
+
+        Script.prototype = {
+            register: function (key) {
+                this.map[key] = '';
+                this.keys.push(key);
+                this.count += 1;
+            },
+
+            done: function (key, text) {
+                var combinedText;
+                if (this.map.hasOwnProperty(key)) {
+                    if (this.doneMap.hasOwnProperty(key)) {
+                        throw new Error('Modus: ' + key +
+                            ' already marked completed in Script instance.');
+                    }
+                    this.map[key] = text || '';
+                    this.doneMap[key] = true;
+                    this.count -= 1;
+
+                    if (this.count === 0) {
+                        //Assemble scripts into a unified whole, and execute
+                        //them.
+                        combinedText = '';
+                        this.keys.forEach(bind(this, function (key) {
+                            combinedText += this.map[key] + '\n';
+                        }));
+
+                        combinedText = "System.define(function (System) {\n" +
+                                (this.isStrict ? "'use strict;'\n" : "") +
+                                combinedText +
+                               '\n});';
+
+                        modus.exec(combinedText, {
+                            define: bind(this.moduleOwner, this.moduleOwner.define)
+                        });
+                    }
+                } else {
+                    throw new Error('Modus: ' + key +
+                            ' not registered with Script instance.');
+                }
+
+            }
+        };
+
         Module = function (map) {
             this.events = undefEvents[map.id] || {};
             this.map = map;
@@ -1019,9 +1069,11 @@ var Loader, System, modus;
                             //but just get the basic parsing working.
                             moduleId = next.value;
                             module = getModule(makeModuleMap(moduleId, this.map));
+                            module.isNamedModule = true;
                             module.modus.readTree = next2.inner;
                             ast = sweet.parser.parse(next2.inner);
                             module.modus.text = sweet.escodegen.generate(ast);
+                            module.script = this.script;
                             module.textFetched();
                             if (this.enabled) {
                                 module.enable();
@@ -1137,6 +1189,9 @@ var Loader, System, modus;
 
                 this.extractImports();
                 this.extractExports();
+
+                //Register the script for ordered execution.
+                this.script.register(this.map.id);
 
                 //If any of the deps are for plugin resources, need to be sure
                 //the plugin is loaded first before doing the next step,
@@ -1265,6 +1320,8 @@ var Loader, System, modus;
                 //Regular dependency.
                 if (!urlFetched[url]) {
                     urlFetched[url] = true;
+
+                    this.script = new Script(config.strict, this);
 
                     this.fetcher = context.fetch(this.map.id, url, {
                         fulfill: bind(this, this.textFetched),
@@ -1445,6 +1502,15 @@ var Loader, System, modus;
                 var content = compile(this.map.url, this.modus.text).text,
                     define = this.define;
 
+                if (this.isNamedModule) {
+                    //Add wrapper around the module,
+                    //it is an internal module to another
+                    //module.
+                    content = "System.define('" + this.map.id + "', function(System) {\n" +
+                        content +
+                        "\n});";
+                }
+
                 //Add sourceURL, but only if one is not already there.
                 if (!sourceUrlRegExp.test(content)) {
                     //IE with conditional comments on cannot handle the
@@ -1454,18 +1520,12 @@ var Loader, System, modus;
                     /*@end@*/
                 }
 
-                if (context.config.strict) {
-                    content = "'use strict;'\n" + content;
-                }
-
-                modus.exec(content, {
-                    define: bind(this, this.define)
-                });
+                this.script.done(this.map.id, content);
             },
 
             define: function (id, factory) {
                 if (typeof id === 'string') {
-
+                    getModule(id).define(factory);
                 } else {
                     factory = id;
                 }
@@ -1670,6 +1730,8 @@ var Loader, System, modus;
                             //Mark this as a dependency for the plugin
                             //resource
                             this.depMaps.push(moduleMap);
+
+                            module.script = new Script(config.strict, module);
 
                             module.textFetched(text, bind(this, function () {
                                 module.enable();
