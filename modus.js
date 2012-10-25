@@ -930,7 +930,7 @@ var Loader, System, modus;
             //If this is not a function declaration, just a dynamic
             //load, then no need to register static work.
             if (!this.map.isDefine) {
-                this.defined = true;
+                this.defineCalled = true;
             }
 
             //If this is an unnormalized ID, skip the "exec" phase since
@@ -1460,7 +1460,7 @@ var Loader, System, modus;
                     this.factory = factory;
 
                 }
-                this.defined = true;
+                this.defineCalled = true;
                 this.check();
             },
 
@@ -1490,9 +1490,9 @@ var Loader, System, modus;
                     this.fetch();
                 } else if (this.error) {
                     this.emit('error', this.error);
-                } else if (!this.defined && this.depCount < 1 && this.staticDone) {
+                } else if (!this.defineCalled && this.depCount < 1 && this.staticDone) {
                     this.exec();
-                } else if (this.defined && !this.defining) {
+                } else if (this.defineCalled && !this.defining) {
                     //The factory could trigger another require call
                     //that would result in checking this module to
                     //define itself again. If already in the process

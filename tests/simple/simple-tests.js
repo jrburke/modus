@@ -1,4 +1,3 @@
-
 System.load(['a'], function(a) {
     doh.register(
         "simple",
