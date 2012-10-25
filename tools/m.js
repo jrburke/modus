@@ -907,12 +907,14 @@ var Loader, System, modus;
             this.doneMap = {};
             this.keys = [];
             this.map = {};
+            this.urlMap = {};
         };
 
         Script.prototype = {
-            register: function (key) {
+            register: function (key, url) {
                 this.map[key] = '';
                 this.keys.push(key);
+                this.urlMap[key] = url;
                 this.count += 1;
             },
 
@@ -939,6 +941,15 @@ var Loader, System, modus;
                                 (this.isStrict ? "'use strict;'\n" : "") +
                                 combinedText +
                                '\n});';
+
+                        //Add sourceURL, but only if one is not already there.
+                        if (!sourceUrlRegExp.test(combinedText)) {
+                            //IE with conditional comments on cannot handle the
+                            //sourceURL trick, so skip it if enabled.
+                            /*@if (@_jscript) @else @*/
+                            combinedText += "\r\n//@ sourceURL=" + this.urlMap[this.keys[this.keys.length - 1]];
+                            /*@end@*/
+                        }
 
                         modus.exec(combinedText, {
                             define: bind(this.moduleOwner, this.moduleOwner.define)
@@ -1191,7 +1202,7 @@ var Loader, System, modus;
                 this.extractExports();
 
                 //Register the script for ordered execution.
-                this.script.register(this.map.id);
+                this.script.register(this.map.id, this.map.url);
 
                 //If any of the deps are for plugin resources, need to be sure
                 //the plugin is loaded first before doing the next step,
@@ -1511,15 +1522,6 @@ var Loader, System, modus;
                         "\n});";
                 }
 
-                //Add sourceURL, but only if one is not already there.
-                if (!sourceUrlRegExp.test(content)) {
-                    //IE with conditional comments on cannot handle the
-                    //sourceURL trick, so skip it if enabled.
-                    /*@if (@_jscript) @else @*/
-                    content += "\r\n//@ sourceURL=" + this.map.url;
-                    /*@end@*/
-                }
-
                 this.script.done(this.map.id, content);
             },
 
@@ -1562,7 +1564,7 @@ var Loader, System, modus;
                     this.emit('error', this.error);
                 } else if (!this.staticDone) {
                     this.staticCheck();
-                } else if (!this.defineCalled && this.depCount < 1) {
+                } else if (!this.defineCalled) {
                     this.exec();
                 } else if (this.defineCalled && !this.defining) {
                     //The factory could trigger another require call
