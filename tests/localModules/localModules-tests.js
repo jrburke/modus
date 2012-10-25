@@ -7,6 +7,7 @@ System.load(['lib'], function (lib) {
             function simple(t) {
                 t.is('a', lib.aName);
                 t.is('b', lib.bName);
+                t.is(3, lib.scopeTest);
             }
         ]
     );

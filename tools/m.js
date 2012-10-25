@@ -944,8 +944,8 @@ var Loader, System, modus;
         Module.prototype = {
 
             extractImports: function (readTree) {
-                var i, token, next, next2, next3, name, current,
-                    macros, moduleId, macro, module,
+                var i, token, next, next2, next3, name, current, ast,
+                    macros, moduleId, macro, module, treeModified,
                     topLevel = !readTree;
 
                 if (!readTree) {
@@ -1020,12 +1020,18 @@ var Loader, System, modus;
                             moduleId = next.value;
                             module = getModule(makeModuleMap(moduleId, this.map));
                             module.modus.readTree = next2.inner;
+                            ast = sweet.parser.parse(next2.inner);
+                            module.modus.text = sweet.escodegen.generate(ast);
                             module.textFetched();
+                            if (this.enabled) {
+                                module.enable();
+                            }
 
                             //Remove these tokens from this readTree and reset
                             //loop index.
-                            readTree.splice(i, 2);
+                            readTree.splice(i, 3);
                             i -= 1;
+                            treeModified = true;
                         }
 
                     } else if (token.type === 3 && token.value === 'System') {
@@ -1045,6 +1051,14 @@ var Loader, System, modus;
                             }
                         }
                     }
+                }
+
+                if (treeModified) {
+                    //Some readTree tokens removed, regenerate source to
+                    //reflect this change.
+                    //sweet.parser.read(text)
+                    ast = sweet.parser.parse(readTree);
+                    this.modus.text = sweet.escodegen.generate(ast);
                 }
             },
 
@@ -1482,15 +1496,13 @@ var Loader, System, modus;
                     factory = this.factory,
                     args = [];
 
-                defined[this.map.id] = exports;
-
-                this.module = makePublicModule(this);
-
                 if (!this.inited) {
                     this.fetch();
                 } else if (this.error) {
                     this.emit('error', this.error);
-                } else if (!this.defineCalled && this.depCount < 1 && this.staticDone) {
+                } else if (!this.staticDone) {
+                    this.staticCheck();
+                } else if (!this.defineCalled && this.depCount < 1) {
                     this.exec();
                 } else if (this.defineCalled && !this.defining) {
                     //The factory could trigger another require call
@@ -1498,6 +1510,10 @@ var Loader, System, modus;
                     //define itself again. If already in the process
                     //of doing that, skip this work.
                     this.defining = true;
+
+                    defined[this.map.id] = exports;
+
+                    this.module = makePublicModule(this);
 
                     if (this.depCount < 1 && !this.defined) {
                         System = makeLocalSystem(this.map);
@@ -1628,7 +1644,6 @@ var Loader, System, modus;
                             this.init([], function (System) { System.set(value); }, null, {
                                 enabled: true
                             });
-                            this.staticCheck();
                             this.define();
                         }),
                         error: bind(this, function (err) {
@@ -1658,7 +1673,6 @@ var Loader, System, modus;
 
                             module.textFetched(text, bind(this, function () {
                                 module.enable();
-                                module.staticCheck();
 
                                 //Bind the value of that module to the value for this
                                 //resource ID.
