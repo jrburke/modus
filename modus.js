@@ -424,7 +424,7 @@ var Loader, System, modus;
         });
 
         return {
-            text: "register(function (System) {\n" +
+            text: "System.define(function (System) {\n" +
                   transformedText +
                   '\n});',
             stars: stars
@@ -930,7 +930,7 @@ var Loader, System, modus;
             //If this is not a function declaration, just a dynamic
             //load, then no need to register static work.
             if (!this.map.isDefine) {
-                this.registered = true;
+                this.defined = true;
             }
 
             //If this is an unnormalized ID, skip the "exec" phase since
@@ -945,7 +945,7 @@ var Loader, System, modus;
 
             extractImports: function (readTree) {
                 var i, token, next, next2, next3, name, current,
-                    macros, moduleId,
+                    macros, moduleId, macro, module,
                     topLevel = !readTree;
 
                 if (!readTree) {
@@ -1012,6 +1012,20 @@ var Loader, System, modus;
                                 this.modus.deps.push(name);
                                 this.modus.depsSet[name] = true;
                             }
+                        } else if (next.type === 8 && next2.type === 9 &&
+                                next2.value === '{}') {
+                            //Inline module.
+                            //TODO: need to create separate internal loader,
+                            //but just get the basic parsing working.
+                            moduleId = next.value;
+                            module = getModule(makeModuleMap(moduleId, this.map));
+                            module.modus.readTree = next2.inner;
+                            module.textFetched();
+
+                            //Remove these tokens from this readTree and reset
+                            //loop index.
+                            readTree.splice(i, 2);
+                            i -= 1;
                         }
 
                     } else if (token.type === 3 && token.value === 'System') {
@@ -1101,8 +1115,11 @@ var Loader, System, modus;
                 //have already fetched the value.
                 this.fetched = true;
 
-                this.modus.text = text;
-                this.modus.readTree = sweet.parser.read(text);
+                //readTree may already be attached.
+                if (text) {
+                    this.modus.text = text;
+                    this.modus.readTree = sweet.parser.read(text);
+                }
 
                 this.extractImports();
                 this.extractExports();
@@ -1407,12 +1424,12 @@ var Loader, System, modus;
                 //If a factory already, a loader.load() call, skip to the
                 //next step.
                 if (this.factory) {
-                    return this.register(this.factory);
+                    return this.define(this.factory);
                 }
 
                 //Compile down to the JavaScript Of Today
                 var content = compile(this.map.url, this.modus.text).text,
-                    register = this.register;
+                    define = this.define;
 
                 //Add sourceURL, but only if one is not already there.
                 if (!sourceUrlRegExp.test(content)) {
@@ -1427,15 +1444,23 @@ var Loader, System, modus;
                     content = "'use strict;'\n" + content;
                 }
 
-                modus.exec(content, bind(this, this.register));
+                modus.exec(content, {
+                    define: bind(this, this.define)
+                });
             },
 
-            register: function (factory) {
+            define: function (id, factory) {
+                if (typeof id === 'string') {
+
+                } else {
+                    factory = id;
+                }
+
                 if (factory) {
                     this.factory = factory;
 
                 }
-                this.registered = true;
+                this.defined = true;
                 this.check();
             },
 
@@ -1465,9 +1490,9 @@ var Loader, System, modus;
                     this.fetch();
                 } else if (this.error) {
                     this.emit('error', this.error);
-                } else if (!this.registered && this.depCount < 1 && this.staticDone) {
+                } else if (!this.defined && this.depCount < 1 && this.staticDone) {
                     this.exec();
-                } else if (this.registered && !this.defining) {
+                } else if (this.defined && !this.defining) {
                     //The factory could trigger another require call
                     //that would result in checking this module to
                     //define itself again. If already in the process
@@ -1482,6 +1507,8 @@ var Loader, System, modus;
                             }));
                             System.exports = exports;
                             System.module = this.module;
+
+                            System.define = bind(this, this.define);
 
                             args.push(System);
                         } else {
@@ -1602,7 +1629,7 @@ var Loader, System, modus;
                                 enabled: true
                             });
                             this.staticCheck();
-                            this.register();
+                            this.define();
                         }),
                         error: bind(this, function (err) {
                             this.inited = true;
@@ -15884,7 +15911,7 @@ modules reference.
 
 //Do this outside the closure, so the eval does not
 //see the modus internals.
-modus.exec = function (text, register) {
+modus.exec = function (text, System) {
     /*jslint evil: true */
     eval(text);
 };
