@@ -801,7 +801,7 @@ var Loader, System, modus;
 
             var system = {
                 get: function (id) {
-                    var map;
+                    var map, env;
 
                     //If require|exports|module are requested, get the
                     //value for them from the special handlers. Caveat:
@@ -820,14 +820,17 @@ var Loader, System, modus;
                     map = makeModuleMap(id, relMap, false, true);
                     id = map.id;
 
-                    if (!hasProp(defined, id)) {
+
+                    env = getLocalEnv(id, relMap && registry[relMap.id]);
+
+                    if (!hasProp(env.defined, id)) {
                         return onError(makeError('notloaded', 'Module name "' +
                                     id +
                                     '" has not been loaded yet for context: ' +
                                     contextName +
                                     (relMap ? '' : '. Use require([])')));
                     }
-                    return defined[id];
+                    return env.defined[id];
                 },
 
                 load: function (deps, callback, errback) {
