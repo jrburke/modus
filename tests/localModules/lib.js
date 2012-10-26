@@ -2,12 +2,12 @@ var crazyScope = 1;
 
 module 'a' {
     export var name = 'a';
-    //crazyScope += 1;
+    crazyScope += 1;
 }
 
 module 'b' {
     export var name = 'b';
-    //crazyScope += 1;
+    crazyScope += 1;
 }
 
 module a from 'a';
