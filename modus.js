@@ -592,14 +592,38 @@ var Loader, System, modus;
             return mod;
         }
 
-        function on(depMap, name, fn) {
-            var id = depMap.id,
-                mod = registry[id];
 
-            if (hasProp(defined, id) &&
+        function getLocalEnv(id, moduleRef) {
+            //If moduleRef, then prefer local loader
+            //that already has a module set up with
+            //that name.
+            var localRegistry;
+            if (moduleRef && moduleRef.localLoader) {
+                localRegistry = moduleRef.localLoader._.registry;
+                if (localRegistry.hasOwnProperty(id)) {
+                    return {
+                        module: localRegistry[id],
+                        registry: localRegistry,
+                        defined: moduleRef.localLoader._.defined
+                    };
+                }
+            }
+            return {
+                module: registry[id],
+                registry: registry,
+                defined: defined
+            };
+        }
+
+        function on(depMap, name, fn, moduleRef) {
+            var id = depMap.id,
+                env = getLocalEnv(id, moduleRef),
+                mod = env.module;
+
+            if (hasProp(env.defined, id) &&
                     (!mod || mod.defineEmitComplete) && name === 'defined') {
                 fn(defined[id]);
-            } else if (hasProp(registry, id) && mod && name === 'staticDone'
+            } else if (hasProp(env.registry, id) && mod && name === 'staticDone'
                     && mod.staticDone) {
                 fn(mod);
             } else {
@@ -641,9 +665,9 @@ var Loader, System, modus;
          * instance so need to rethink optimization.
          */
         function enable(depMap, parent) {
-            var mod = registry[depMap.id];
-            if (mod) {
-                getModule(depMap).enable();
+            var env = getLocalEnv(depMap.id, parent);
+            if (env.module) {
+                env.module.enable();
             }
         }
 
@@ -979,6 +1003,7 @@ var Loader, System, modus;
                 deps: [],
                 depsSet: {},
                 text: undefined,
+                localIds: {},
                 macros: {},
                 maybeStaticImportIndex: {},
                 importMacros: {},
@@ -1075,11 +1100,15 @@ var Loader, System, modus;
                             }
                         } else if (next.type === 8 && next2.type === 9 &&
                                 next2.value === '{}') {
-                            //Inline module.
-                            //TODO: need to create separate internal loader,
-                            //but just get the basic parsing working.
+                            //Inline module. Use a child loader,
+                            //to create a private namespace.
+                            if (!this.localLoader) {
+                                this.localLoader = new Loader(context, config);
+                            }
+
                             moduleId = next.value;
-                            module = getModule(makeModuleMap(moduleId, this.map));
+                            this.modus.localIds[moduleId] = true;
+                            module = this.localLoader._.getModule(makeModuleMap(moduleId, this.map));
                             module.isNamedModule = true;
                             module.modus.readTree = next2.inner;
                             ast = sweet.parser.parse(next2.inner);
@@ -1096,7 +1125,6 @@ var Loader, System, modus;
                             i -= 1;
                             treeModified = true;
                         }
-
                     } else if (token.type === 3 && token.value === 'System') {
                         next = readTree[i + 1].token;
                         next2 = readTree[i + 2].token;
@@ -1391,21 +1419,24 @@ var Loader, System, modus;
                                 return;
                             }
 
-                            this.depCount += 1;
+                            if (!this.modus.localIds.hasOwnProperty(depMap.id)) {
+                                this.depCount += 1;
+                            }
+
                             this.staticDepCount += 1;
 
                             //Once static step on dependency is done, note it here.
                             on(depMap, 'staticDone', bind(this, function (depModule) {
                                 this.staticDepDone(i, depModule);
-                            }));
+                            }), this);
 
                             on(depMap, 'defined', bind(this, function (depExports) {
                                 this.defineDep(i, depExports);
                                 this.check();
-                            }));
+                            }), this);
 
                             if (this.errback) {
-                                on(depMap, 'error', this.errback);
+                                on(depMap, 'error', this.errback, this);
                             }
                         }
 
@@ -1526,8 +1557,10 @@ var Loader, System, modus;
             },
 
             define: function (id, factory) {
+                var env;
                 if (typeof id === 'string') {
-                    getModule(id).define(factory);
+                    env = getLocalEnv(id, this);
+                    (env.module || getModule(id)).define(factory);
                 } else {
                     factory = id;
                 }
@@ -1778,6 +1811,7 @@ var Loader, System, modus;
 
         //"private" things exposed publicly for debugging modus itself.
         context._ = {
+            getModule: getModule,
             config: config,
             registry: registry,
             defined: defined,
@@ -2095,6 +2129,19 @@ var Loader, System, modus;
 
         mixin(context, makeLocalSystem());
 
+        //Mix in the parent goodness.
+        if (parent) {
+            options = mixin({
+                global: parent.global,
+                strict: parent.strict,
+                fetch: parent.fetch,
+                syncGet: parent.syncGet,
+                onResourceLoad: parent.onResourceLoad,
+                nextTick: parent.nextTick,
+                onError: parent.onError
+            }, options, true);
+        }
+
         context.global = options.global || global;
         context.strict = options.hasOwnProperty('strict') ? !!options.strict : true;
         if (options.fetch) {
@@ -2129,12 +2176,15 @@ var Loader, System, modus;
     }
 
     Loader = function Loader(parent, options) {
-        return newContext(parent, {
-            name: 'System'
-        }, this);
+        if (this === global) {
+            throw new Error("Use 'new Loader() to create a loader instance");
+        }
+        return newContext(parent, options, this);
     };
 
-    System = new Loader();
+    System = new Loader(null, {
+        name: 'System'
+    });
 
     //Allow passing in a config as var modus = {}
     if (typeof modus !== 'undefined' && !modus.contexts) {
