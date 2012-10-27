@@ -31,6 +31,7 @@ var Loader, System, modus;
         isBrowser = !!(typeof window !== 'undefined' && navigator && document),
         isWebWorker = !isBrowser && typeof importScripts !== 'undefined',
         contextCounter = 0,
+        contextExecCounter = 0,
         scriptText = '';
 
     function isFunction(it) {
@@ -1149,11 +1150,26 @@ var Loader, System, modus;
                             //to maintain scope/statement ordering later.
                             next.value = '>>INSERT MODULE ' + next.value;
 
-                            //Remove the token and next2, but keep next for the
+                            //Remove the token, but keep next for the
                             //insertion point. Now that next is the current i
                             //index, the i index does not have to be reset.
+                            //Convert the next2 to be a semicolon.
                             readTree.splice(i + 2, 1);
                             readTree.splice(i, 1);
+
+                            next2.type = 7;
+                            next2.value = ';';
+                            next2.range = next2.startRange;
+                            next2.lineNumber = next2.startLineNumber;
+                            next2.lineStart = next2.startLineStart;
+                            delete next2.inner;
+                            delete next2.startRange;
+                            delete next2.startLineNumber;
+                            delete next2.startLineStart;
+                            delete next2.endRange;
+                            delete next2.endLineNumber;
+                            delete next2.endLineStart;
+
                             treeModified = true;
                         }
                     } else if (token.type === 3 && token.value === 'System') {
@@ -2121,6 +2137,22 @@ var Loader, System, modus;
                 return config.urlArgs ? url +
                                         ((url.indexOf('?') === -1 ? '?' : '&') +
                                          config.urlArgs) : url;
+            },
+
+            //Executes some script in the current loader context.
+            //May be cheating a bit by creating a dummy module.
+            //This function is a bit weird, in that textFetched used
+            //internally can complete async. So not sure how that
+            //ties in for using it handle script tag source, which has the
+            //expectation of running synchronously.
+            exec: function (text) {
+                var id = '!toplevel!' + (contextExecCounter += 1),
+                    module = getModule(makeModuleMap(id));
+
+                module.fetched = true;
+                module.enable();
+                module.script = new Script(config.strict, module);
+                module.textFetched(text);
             },
 
             fetch: function (id, url, request) {
