@@ -1445,6 +1445,17 @@ var Loader, System, modus;
                         this.enabledDeps = true;
                     }
 
+                    var parentMod, localIds;
+
+                    if (!this.map.isDefine && this.map.parentMap) {
+                        //Take local IDs and modules from the parent module
+                        parentMod = registry[this.map.parentMap.id];
+                        this.modus.localIds = parentMod.modus.localIds;
+                        this.localLoader = parentMod.localLoader;
+                    }
+
+                    localIds = this.modus.localIds;
+
                     //Enable each dependency
                     each(this.depMaps, bind(this, function (depMap, i) {
                         var id, mod, handler;
@@ -1465,7 +1476,7 @@ var Loader, System, modus;
                                 return;
                             }
 
-                            if (!this.modus.localIds.hasOwnProperty(depMap.id)) {
+                            if (!localIds.hasOwnProperty(depMap.id)) {
                                 this.depCount += 1;
                             }
 
