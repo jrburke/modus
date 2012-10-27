@@ -1154,7 +1154,6 @@ var Loader, System, modus;
                             //insertion point. Now that next is the current i
                             //index, the i index does not have to be reset.
                             //Convert the next2 to be a semicolon.
-                            readTree.splice(i + 2, 1);
                             readTree.splice(i, 1);
 
                             next2.type = 7;
@@ -1195,7 +1194,7 @@ var Loader, System, modus;
                     //Some readTree tokens removed, regenerate source to
                     //reflect this change.
                     //sweet.parser.read(text)
-                    ast = sweet.parser.parse(readTree);
+                    ast = sweet.parser.parse(sweet.expander.flatten(readTree));
                     this.modus.text = sweet.escodegen.generate(ast);
                 }
             },
