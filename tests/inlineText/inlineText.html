@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>modus: Inline Text Test</title>
+    <script type="text/javascript" src="../doh/runner.js"></script>
+    <script type="text/javascript" src="../doh/_browserRunner.js"></script>
+    <script type="text/x-modus">
+        var crazyScope = 1;
+
+        module 'a' {
+            export var name = 'a';
+            crazyScope += 1;
+        }
+
+        module 'b' {
+            export var name = 'b';
+            crazyScope += 1;
+        }
+
+        System.load(['a', 'b'], function (a, b) {
+            'use strict';
+            doh.register(
+                "inlineText",
+                [
+                    function inlineText(t) {
+                        t.is('a', a.name);
+                        t.is('b', b.name);
+                        t.is(3, crazyScope);
+                    }
+                ]
+            );
+            doh.run();
+        });
+    </script>
+    <script type="text/javascript" src="../../modus.js"></script>
+</head>
+<body>
+    <h1>modus: Inline Text Test</h1>
+    <p> Try out a text/script
+    <p>Check console for messages</p>
+</body>
+</html>

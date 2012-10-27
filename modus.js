@@ -16050,22 +16050,15 @@ return { parse: require("sweet").parse,
     };
 
     //Load any scripts that are text/x-modus
-/* TODO: what to do here? Could readTree it, and separate at module boundaries,
-create new Module instances, and call textFetched with that portion of the
-readTree. Need to allow textFetched to receive readTree or string, and also
-set this.fetched = true to indicate it does not need to be fetched.
-Ideally the modules are all converted to a function, then the original text
-all executed in case there is lexical scope involved and outer JS that the
-modules reference.
     if (isBrowser && !isWebWorker) {
+        //debugger;
         each(document.querySelectorAll('script[type="text/x-modus"]'), function (node) {
             scriptText += node.textContent;
         });
         if (scriptText) {
-            System.exec(scriptText)?;
+            System.exec(scriptText);
         }
     }
- */
 }(this));
 
 //Do this outside the closure, so the eval does not
