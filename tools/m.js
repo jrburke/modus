@@ -935,9 +935,12 @@ var Loader, System, modus;
             this.keys = [];
             this.map = {};
             this.urlMap = {};
+            this.ownerKey = moduleOwner.map.id;
         };
 
         Script.prototype = {
+            insertPrefix: "'>>INSERT MODULE ",
+
             register: function (key, url) {
                 this.map[key] = '';
                 this.keys.push(key);
@@ -959,9 +962,29 @@ var Loader, System, modus;
                     if (this.count === 0) {
                         //Assemble scripts into a unified whole, and execute
                         //them.
-                        combinedText = '';
+                        combinedText = this.map[this.ownerKey];
+
+                        //Replace INSERT module calls
+                        //Replace '>>INSERT MODULE ' + id values
+                        //with module data
                         this.keys.forEach(bind(this, function (key) {
-                            combinedText += this.map[key] + '\n';
+                            //Do not do the owner in this loop.
+                            if (key === this.ownerKey) {
+                                return;
+                            }
+
+                            var marker = this.insertPrefix + key + "';",
+                                index = combinedText.indexOf(marker);
+
+                            if (index === -1) {
+                                throw new Error('Cannot assemble script');
+                            }
+
+                            combinedText = combinedText.substring(0, index) +
+                                           this.map[key] + '\n' +
+                                           combinedText.substring(index + 1 + marker.length,
+                                                                  combinedText.length) +
+                                           '\n';
                         }));
 
                         combinedText = "System.define(function (System) {\n" +
@@ -1122,10 +1145,15 @@ var Loader, System, modus;
                                 module.enable();
                             }
 
-                            //Remove these tokens from this readTree and reset
-                            //loop index.
-                            readTree.splice(i, 3);
-                            i -= 1;
+                            //Keep the string around for script insertion later
+                            //to maintain scope/statement ordering later.
+                            next.value = '>>INSERT MODULE ' + next.value;
+
+                            //Remove the token and next2, but keep next for the
+                            //insertion point. Now that next is the current i
+                            //index, the i index does not have to be reset.
+                            readTree.splice(i + 2, 1);
+                            readTree.splice(i, 1);
                             treeModified = true;
                         }
                     } else if (token.type === 3 && token.value === 'System') {

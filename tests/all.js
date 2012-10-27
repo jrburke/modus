@@ -7,5 +7,7 @@ doh.registerUrl("import", "../import/import.html");
 doh.registerUrl("macro", "../macro/macro.html");
 doh.registerUrl("macroImport", "../macro/import/macroImport.html");
 
+doh.registerUrl("localModules", "../localModules/localModules.html");
+
 doh.registerUrl("plugins", "../plugins/plugins.html");
 doh.registerUrl("pluginsResolve", "../plugins/resolve/resolve.html");
