@@ -269,4 +269,9 @@ ID namespacing?
 have larger implications either on implementation or conceptual understanding?
 Probably just harmless implementation detail.
 
+5) Confirm rules around visibility of local modules. In particular if a module "a'" needs to be loaded, and there are say, three levels of nested modules, and both the outer and most inner need "a", do they both get the same module value? I would like to say no, need to contain how far up the chains lookups need to go?
+
+6) Script from inline script tags are treated just a like a module loaded from the top level. However, this may not be desired as the code will actually finish async. Right now due to loader plugin lookups in textFetched. Need to think more over what that means, if that needs to really be synchronous execution.
+
+
 
