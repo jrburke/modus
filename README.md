@@ -1,13 +1,13 @@
 An experiment relating to ECMAScript modules that tries out the following:
 
-* "module loader plugins" that allow loading non-JS dependencies. This allows
-easier use of transpilers and resources that are necessary for a module setup.
-These resources are not JS in source form, but can be translated to a JS form.
-Templates for browser-based widgets being a common example.
 * Static module forms, but runtime values can be dynamic values. This allows
 easier use of legacy (pre-ES.next code), and allow for modules to export a
 single runtime value, like a constructor function, without needing the module to
 give an explicit name to that value.
+* "module loader plugins" that allow loading non-JS dependencies. This allows
+easier use of transpilers and resources that are necessary for a module setup.
+These resources are not JS in source form, but can be translated to a JS form.
+Templates for browser-based widgets being a common example.
 * Modules IDs that are string IDs, not identifiers or raw URLs. This allows for
 the loader plugin-style of modules, a more direct relationship between
 dependency references and module definitions, and a way for modules that are
@@ -129,8 +129,11 @@ that dependency during runtime.
 Each module gets its own, local `System` variable that has the following
 properties that are specific to each module:
 
-* System.get(StringLiteral): Gets a module dependency's runtime exports value.
+* System.get(StringLiteral): Gets a dependency's runtime exports value.
+Relative IDs are resolved relative the current module ID (not its path).
 * System.set(Object): Sets the export value for this module.
+* System.load(Array, Function): Same as top level System.load(), but relative
+module IDs are resolved relative to the current module ID (not its path).
 * System.exports -- the exports object for the module, used if System.set()
 is not called.
 * System.module -- an object that has information about the current module:
@@ -139,6 +142,15 @@ is not called.
     * System.module.config(): A function that can be called to get runtime
       configuration passed to the module via a top level System.config() call.
 * System.define(StringLiteral, Function): Allows defining a module inline.
+* System.toUrl(String): When passed a string that looks like `moduleID + '.' +
+fileExtension`, it generates that path according to the ID-to-path configuration.
+* System.defined(String): Returns true if the module ID passed to this method
+has a defined module value.
+* System.specified(String): Returns true if the module ID passed to this method
+has been specified to the loader to be loaded, and it either has not finished
+loading/evaluating, or it has already been defined. So, for a given module ID,
+if System.defined() returns true, so will System.specified. However, the converse
+is not necessarily true.
 
 This runtime API may be a bit wordy to use, it may be nicer to just support
 local variables that look like:
@@ -357,5 +369,8 @@ Probably just harmless implementation detail.
 
 6) Script from inline script tags are treated just a like a module loaded from the top level. However, this may not be desired as the code will actually finish async. Right now due to loader plugin lookups in textFetched. Need to think more over what that means, if that needs to really be synchronous execution.
 
-
+7) "Meta APIs":
+* some folks have wanted to know "modules are loading", even "n of total done".
+* For things like build tools, it is nice to generate dependency graphs, although that is a bit tricky given loader plugins -- they normally need to be run as fully executed code in a build tool.
+* Getting good diagnostics about why a module failed to load (was it a path thing, where are the module cycles, is that a cause of a problem, etc...)
 
