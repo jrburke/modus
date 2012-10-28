@@ -35,12 +35,51 @@ To import a statically known export:
 
     import y from 'a';
 
-    //The next one is not support yet, but is possible to do
+    //The next one is not supported yet in modus,
+    //but will be at some point, need to update the parser.
     import { name: localGammaName } from 'gamma';
 
 To statically indicate an export property:
 
     export var name = 'a';
+
+
+To declare multiple modules:
+
+    module 'a' {
+        module b from 'b';
+        export var name = 'a';
+        export b;
+    }
+
+    module 'b' {
+        export var name = 'b';
+    }
+
+`module 'b' {}` is treated as function scope, and the module bodies are not
+executed until there is an explicit dependency reference for them.
+
+Named modules are only visible within the current module or loader.
+
+Example of local module definitions: For a module 'c' defined in c.js:
+
+    module 'a' {
+        module b from 'b';
+        export var name = 'a';
+        export b;
+    }
+
+    module 'b' {
+        export var name = 'b';
+    }
+
+    module a from 'a';
+    module b from 'b';
+
+    export var aName = a.name;
+    export var bName = b.name;
+
+Modules 'a' and 'b' will not be visible outside of module 'c'.
 
 ### Runtime/Dynamic API
 
@@ -58,12 +97,78 @@ System.get():
 var dep = System.get('util/helper');
 ```
 
-For the runtime API, any `System.get('stringLiteral')` calls are parsed via
-AST, and those dependencies are fetched and executed before executing the
-current module. `System.get()` just returns the cached export for that
-dependency during runtime.
+To define a named module (adapting the 'c' module example from the static
+section):
 
-By supporting the runtime API natively, this allows:
+```javascript
+
+System.define('a', function (System) {
+    var b = System.get('b');
+    System.set({
+        name: 'a',
+        b: b
+    });
+});
+
+System.define('b', function (System) {
+    System.exports.name = 'b';
+});
+
+var a = System.get('a'),
+    b = System.get('b');
+
+System.exports.aName = a.name;
+System.exports.bName = b.name;
+```
+
+For the runtime API, any `System.get('stringLiteral')` calls are parsed from the
+reader token stream, and those dependencies are fetched and executed before
+executing the current module. `System.get()` just returns the cached export for
+that dependency during runtime.
+
+Each module gets its own, local `System` variable that has the following
+properties that are specific to each module:
+
+* System.get(StringLiteral): Gets a module dependency's runtime exports value.
+* System.set(Object): Sets the export value for this module.
+* System.exports -- the exports object for the module, used if System.set()
+is not called.
+* System.module -- an object that has information about the current module:
+    * System.module.id: the module ID.
+    * System.module.uri: the URI for the module.
+    * System.module.config(): A function that can be called to get runtime
+      configuration passed to the module via a top level System.config() call.
+* System.define(StringLiteral, Function): Allows defining a module inline.
+
+This runtime API may be a bit wordy to use, it may be nicer to just support
+local variables that look like:
+
+* get(StringLiteral)
+* set(Object)
+* exports
+* module
+    * module.id
+    * module.uri
+    * module.config()
+* define(StringLiteral, Function)
+
+The `module` one may be tricky to support though in this fashion. If so, maybe
+favor another name, maybe `me`?
+
+If this local variable approach was taken, then it may be worth considering
+just using the AMD definitions of these items. This would have the benefit
+of allowing many existing scripts to be used as-is, and a good portion of
+Node/CommonJS modules would work out of the box too. The only ones that would
+not work would be ones that used dynamic/imperative require() calls:
+
+    var id = 'something' + someDynamicCall();
+    var dep = require(dep);
+
+Those would either need to be converted to a callback-style System.load/AMD-style
+callback require, or perhaps allow a module hook that Node could implement to
+allow the synchronous trace of that module to work.
+
+Whatever the runtime API is though, by supporting the runtime API, this allows:
 
 * "Legacy" JS to opt-in to being used by an ES.next module system, in a way that
 allows the the legacy script to work in non-ES.next systems (1JS concerns).
@@ -176,19 +281,18 @@ script injects the modified sweetjs and esprima into m.js and saves that output
 as modus.js. If you want to do modifications to modus, change m.js, then generate
 modus.js via the build script to get an updated file.
 
-## What? Macros in JavaScript?
+## Macros in JavaScript?
 
-This project used macros as the static form to process because it was something
-that had a concrete implementation, and the reader concept from the sweetjs
-project is really neat. However, use of macros in this project does not mean that
+This project needed a static transform to do, to test the static, then dynamic
+execution execution of modules. Macros via the sweetjs implementation were chosen
+to demonstrate the kind of work that could be done in the static phase. The
+reader concept from sweetjs was also useful since it allowed experimenting with
+new syntax a bit easier. Use of macros in this project does not mean that
 macros are definitely coming to JavaScript, and if they do, they may look
-differently than what is provided here. It is just to prove out doing static
-work before dropping the code down into dynamic calls and dynamic module values.
-
-The goal is to really show the kinds of static module work that can be done in
-a way that still allows for a dynamic module API that would allow "single value"
-exports and allowing "legacy JavaScript" to opt in to being used as an ES module
-by calling a dynamic, runtime API.
+differently than what is provided here. For example, this project does not allow
+macros to generate `module`, `import` or `export` statements, because those are
+the code boundaries used to define code units, and they are found before applying
+macros.
 
 All that said, sweetjs is pretty sweet, and it is really cool that they may
 have figured out a way to construct
@@ -197,40 +301,20 @@ for JS. The reader may have some use even outside of macros, and there could be
 JS use cases that really benefit from macros, in particular language variants
 that are lighter than full transpilers.
 
+However, the use of macros should not be seen as necessary to support the
+module approach in this project, it is just an example static processing form
+for this project's approach to a module lifecycle.
+
 ## Unsupported syntax
 
-1) "Built" forms, where there are named modules all combined together:
-
-    module 'a' {
-        module b from 'b';
-        export var name = 'a';
-        export b;
-    }
-
-    module 'b' {
-        export var name = 'b';
-    }
-
-This should be possible, just need to work out the AST transforms. `module {}`
-scope will be treated the same as `function () {}` scope.
-
-2. No `import *`. It seems like it is on its way out. It could be supported
+1. No `import *`. It seems like it is on its way out. It could be supported
 in the future, but only for static exports from a dependency.
 
 ## TODO
 
-* Allow the built forms mentioned above.
-* Allow a local `System.exports.prop = value`, to allow for cycle dependencies via the
-runtime API?
-* Allow a `System.module` that has a .id and .uri properties that give info on
-the current module? This is similar to the `module` free variable in CommonJS/AMD
-and is used often times to locate resources relative to the module.
-* Change the loader plugin API to something that matches the Module Loader API,
-like resolve vs normalize, anything else?
-* Integrate modus parsing into the core of requirejs for the plugin path,
-so transpiled languages can use the modus syntax.
+* Do an example of a transpiler plugin that outputs JS using the static API.
 * Throw if `System.set()` is used with the static `export var name` forms.
-* Only `import y from 'a'` is supported, no destructure type of thing yet. Just a
+* Only `import y from 'a'` is supported, no destructure of import yet. Just a
 lack of getting the parser logic correct, no inherent problem.
 
 # To think about
